@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="MacEverything/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="MacEverything" width="128" />
+  <img src="assets/branding/app-icon.png" alt="MacEverything app icon" width="128" />
 </p>
 
 <h1 align="center">MacEverything</h1>
 
 <p align="center">
   <b>macOS 极速文件搜索工具</b> — 在数百万文件中毫秒级定位任意文件。<br/>
-  灵感源自 Windows 上的 <a href="https://www.voidtools.com/">Everything</a>，Mac 上无出其右。
+  灵感源自 Windows 上的 <a href="https://www.voidtools.com/">Everything</a>，基于 C++20 与 SwiftUI 构建。
 </p>
 
 <p align="center">
@@ -14,35 +14,40 @@
 </p>
 
 <p align="center">
-  <a href="#安装"><img src="https://img.shields.io/badge/macOS-13%2B-blue?logo=apple" alt="macOS 13+" /></a>
+  <a href="#安装"><img src="https://img.shields.io/badge/macOS-14%2B-blue?logo=apple" alt="macOS 14+" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
-  <a href="#测试体系"><img src="https://img.shields.io/badge/tests-79%20modules-brightgreen" alt="79 test modules" /></a>
+  <a href="#测试体系"><img src="https://img.shields.io/badge/tests-regression%20suites-brightgreen" alt="Regression test suites" /></a>
   <a href="#ai-工具集成-mcp"><img src="https://img.shields.io/badge/MCP-compatible-blueviolet" alt="MCP Compatible" /></a>
 </p>
 
 ---
 
 <p align="center">
-  <img src="assets/screen-shot.jpg" alt="MacEverything Screenshot" width="720" />
+  <img src="assets/screen-shot.png" alt="MacEverything Screenshot" width="720" />
 </p>
+
+## 最新更新 · 2026-10-22
+
+当前版本 **1.2（Build 3）**，作者 **YuSec**。
+
+- **更低的索引内存占用**：共享目录树与名称、差分压缩倒排表、紧凑路径表和元数据窄列；固定快照约 638 万条有效记录，就绪物理足迹约 **573 MiB**。
+- **查询与增量更新优化**：专用字符串扫描、每线程 Top-K、目录候选展开与批量倒排表删除；固定快照中删除 41,562 条记录由约 **1.4 s 降至 0.25 s**。
+- **菜单栏搜索与分页结果**：主窗口和弹出面板共用索引、查询状态；首批加载 100 条，滚动时继续取页。
+- **全新 icon、logo 与 About**：应用菜单或菜单栏右键菜单打开 **About MacEverything**，查看作者、版本、GitHub 和更新说明。
+
+内存与耗时来自已有本机审计，并非所有机器和负载的保证。详见 [内存优化日志](docs/changelog/146-resident-memory-optimization.md)、[算法更新日志](docs/changelog/147-query-and-prefix-removal.md) 和 [完整变更记录](docs/changelog/README.md)。
 
 ## 功能亮点
 
 ### 极速搜索
 
-索引整块磁盘 **500 万+ 文件只需 14 秒**，之后每次搜索 **不到 5ms** 返回结果。比 Spotlight 快两个数量级。
+名称 trigram 和扩展名索引缩小候选范围，复杂条件由并行查询引擎处理。在约 638 万条有效记录的固定快照上，热查询样本中 `*.swift` 约 **0.93 ms**、`readme` 约 **6.13 ms**；较宽的目录查询可能需要数十毫秒。
 
-| 对比项 | MacEverything | Spotlight | `find` |
-|--------|:---:|:---:|:---:|
-| 索引 500 万文件 | ~14 秒 | 数分钟以上 | 无索引 |
-| 搜索延迟 | **< 5ms** | 200ms–2s | 5–30s |
-| 实时文件监控 | FSEvents | FSEvents | 无 |
-| 内容搜索 | Trigram 索引 | 侧重元数据 | `grep` |
-| AI 工具集成 | 内置 MCP | 不支持 | 不支持 |
+这些是核心引擎的本机测量，不含 GUI 防抖、桥接及绘制时间。数据规模、查询条件与结果上限均会影响耗时；[测量方法与原始结果](docs/audits/2026-10-22/path-table-dir-runs/report.md) 见开发者篇。
 
 ### 随叫随到
 
-按 **`Option+Space`** 随时唤出搜索窗口（快捷键可自定义），搜索栏自动获得焦点 — 唤起即输入，搜完即走。支持开机自启（最小化后台运行），不打扰你的工作流。
+按 **`Option+Space`** 默认唤出菜单栏搜索面板；快捷键和唤起目标可在 Shortcut Settings 中配置。也可左键点击菜单栏图标搜索，右键打开设置菜单。面板自动聚焦，按 **Escape** 关闭，并可切换到主窗口继续查看同一查询。支持开机自启和最小化后台运行。
 
 ### 智能输入体验
 
@@ -101,7 +106,7 @@
 ### 实时同步，永不过时
 
 - **文件监控** — 基于 FSEvents 实时监听文件系统变更，新建、重命名、删除的文件立即出现在搜索结果中
-- **两阶段即时启动** — 启动时先加载磁盘缓存（立即可搜），后台通过 FSEvents 增量追赶变更，搜索零等待
+- **两阶段即时启动** — 先加载 v6 缓存使搜索可用，后台构建加速索引并追赶文件变更；索引未就绪时可回退扫描
 - **焦点感知省电** — 窗口不在前台时暂停刷新，回到前台时批量追赶，几乎零后台 CPU 占用
 
 ### 交互细节
@@ -111,6 +116,8 @@
 - **右键菜单** — 打开 / 在 Finder 中显示 / 复制路径
 - **Cmd+Click** — 快速在 Finder 中定位文件
 - **最近文件** — 搜索栏为空时自动展示最近修改的文件
+- **Quick Look** — 结果列表获得焦点后按 **Space** 预览文件，按 **Escape** 关闭预览
+- **About** — 查看 YuSec、1.2（Build 3）及 GitHub 链接；[浅色](assets/branding/previews/about-light.png) / [深色](assets/branding/previews/about-dark.png) 预览
 
 ### AI 工具集成 (MCP)
 
@@ -148,22 +155,29 @@ curl "http://localhost:19860/api/status"                          # 索引状态
 
 #### 下载 DMG（推荐）
 
-1. 从 [Releases](../../releases) 下载 `MacEverything.dmg`
+1. 从 [Releases](https://github.com/YuSec2021/mac-everything/releases) 下载 `MacEverything.dmg`
 2. 将 `MacEverything.app` 拖入「应用程序」文件夹
 3. 启动后按提示授予 **完全磁盘访问权限**
-4. 等待初始扫描完成（约 14 秒）
+4. 首次启动等待索引建立；时间取决于磁盘、文件数量及访问权限
 5. 按 `Option+Space` 开始搜索
 
 #### 从源码构建
 
-**环境要求：** macOS 13+，Xcode 15+
+**环境要求：** macOS 14+，Xcode 15+
 
 ```bash
-git clone https://github.com/user/MacEverything.git && cd MacEverything
+brew install re2 abseil
+git clone https://github.com/YuSec2021/mac-everything.git
+cd mac-everything
 
 xcodebuild -project MacEverything.xcodeproj -scheme MacEverything \
   -configuration Release build SYMROOT=build
 
+# 安装并启动
+ditto build/Release/MacEverything.app /Applications/MacEverything.app
+open /Applications/MacEverything.app
+
+# 可选：打包 DMG
 hdiutil create -volname MacEverything \
   -srcfolder build/Release/MacEverything.app \
   -ov -format UDZO MacEverything.dmg
@@ -211,66 +225,68 @@ make daemon
 | 组件 | 关键设计 |
 |------|---------|
 | **DirectoryScanner** | 多线程工作窃取 + `getattrlistbulk` 单次系统调用批量获取文件属性，4–32 线程自适应 |
-| **SearchEngine** | Trigram 倒排索引（name + path 双索引）+ 竞争选择最优候选集 + SoA 列式过滤 |
+| **SearchEngine** | 名称 trigram + 扩展名索引；目录候选展开、并行扫描与每线程 Top-K，按评分/路径长度/记录号稳定排序 |
 | **ContentIndex** | Trigram 全文倒排索引，FNV-1a 哈希增量更新，仅重新索引变更文件 |
-| **SIMDSearch** | ARM NEON 128-bit first-last byte 向量化匹配 + 2x 循环展开，单线程 11.5 GB/s |
-| **IndexPersistence** | WAL + CRC32 + 分页脏页刷写 + 原子 rename，COW 无阻塞压缩（锁持有 < 100ms） |
+| **SIMDSearch** | ARM NEON 128-bit first-last byte 向量化匹配 + 2x 循环展开 |
+| **IndexPersistence / FlatIndexWriter** | v6 Flat SoA + WAL + 流式 CRC + 原子 rename；共享读视图保存，更新在保存期间排队 |
 | **FileSystemWatcher** | FSEvents + eventId 增量回放 + 日志截断检测自动子树重扫 |
-| **PathTable** | 路径字符串 intern 化 — 目录路径仅存 `uint32` 索引，百万文件节省 ~550MB |
+| **DirectoryPool / FoldedNamePool** | 父目录组件树；原始与小写数据共享字节，路径按需还原 |
+| **PathRecordTable / DirRecordMap** | 每槽 4 字节的路径定位表；CSR 连续记录段及追加尾列表 |
+| **PackedPostingList / NarrowColumn** | varint 差分倒排表与稀疏检查点；大小/修改时间窄列 + 精确溢出旁表 |
 | **QueryParser** | 完整 AST 管线：Tokenizer → FilterParser → Parser → QueryAST，30+ 过滤器关键词 |
 
 ### 基准测试
 
-测试环境：macOS Darwin 24.3.0，**540 万索引文件**，48 种查询类型：
+以下为 **2026-10-22** 的固定 v6 快照测量：6,460,706 个记录位置、**6,381,948 条有效记录**、707,177 个父目录。查询为独立 Release/O2 核心进程，预热一次后运行五次取中位数，最多返回 10,000 条；不含 GUI 开销。
 
-#### 搜索延迟
+#### 查询延迟
 
-| 查询类型 | 平均延迟 | 示例 |
-|----------|:---------:|------|
-| 长关键词 (7+ 字符) | **0.1–1ms** | `screenshot` 0.1ms, `dockerfile` 0.1ms |
-| 中等关键词 (4–6 字符) | **1–5ms** | `readme` 1.2ms, `config` 4.7ms |
-| Glob 模式 | **0.7–18ms** | `*.cpp` 0.7ms, `*.swift` 1.5ms |
-| 路径查询 | **3–32ms** | `package.json` 2.9ms |
-| 全部 48 种查询 (均值) | **10.5ms** | SoA 优化后最新结果 |
+| 查询 | 中位耗时 | 执行方式 |
+|------|---------:|----------|
+| `*.swift` | 0.93 ms | 名称 trigram |
+| `readme` | 6.13 ms | 名称 trigram |
+| `size:>1mb` | 2.12 ms | SoA 并行过滤 |
+| `type:folder` | 2.09 ms | SoA 并行过滤 |
+| `path:MacEverything ext:swift` | 0.05 ms | 扩展名索引 |
+| `MacEverything/a` | 34.62 ms | 目录扫描与记录展开 |
+| `site-packages/a` | 49.96 ms | 目录扫描与记录展开 |
 
-#### Trigram vs 线性扫描
+来源：[路径表优化报告](docs/audits/2026-10-22/path-table-dir-runs/report.md) 与 [原始查询输出](docs/audits/2026-10-22/path-table-dir-runs/after.txt)。这些是热查询样本，不代表全部查询或端到端延迟。
 
-| 查询 | Trigram | 线性扫描 | 加速比 |
-|------|:------:|:------:|:------:|
-| `node_modules` | 0.5ms | 154ms | **308x** |
-| `application` | 2.1ms | 175ms | **83x** |
-| `readme` | 1.2ms | 49ms | **41x** |
+#### 内存与增量更新
 
-#### SIMD 字符串搜索 (Apple M3 Pro)
+| 优化轮次 | 优化前 | 优化后 |
+|----------|-------:|-------:|
+| 列收窄、32 位 hash 与分配器配置：就绪足迹 | 1266.88 MiB | 708.25 MiB |
+| 路径表、目录分段与去除 inode/devId：就绪足迹 | 702.3 MiB | 573.0 MiB |
+| Top-K：`size:>=0` 查询额外采样足迹 | 179.24 MiB | 2.36 MiB |
+| 批量维护索引：删除 41,562 条记录 | 1396.9 / 1430.1 ms | 245.7 / 252.8 ms |
 
-| 方法 | 吞吐量 | 对比 `std::string::find` |
-|------|:------:|:------------------------:|
-| `std::string::find` | 1.2 GB/s | 基准线 |
-| **NEON 128-bit（单线程）** | **11.5 GB/s** | **9.5x** |
-| **NEON 128-bit（12 线程）** | **74.3 GB/s** | **60.7x** |
+各行来自独立轮次，不可拼成一次端到端测量；内存为物理足迹，查询额外占用为采样值，不与 RSS 或结构容量混用。内存优化伴随解码与路径还原成本，不意味着所有查询更快。
+
+当轮桌面进程约 642 万条有效记录，Phase 2 完成时 `footprint` 为 **600 MB**，约 3.5 分钟后 **612 MB**；这是短时观察，不保证长期运行、保存、压缩或启用全文索引后始终低于 1 GiB。
+
+完整口径、兼容性与测试范围见 [内存日志](docs/changelog/146-resident-memory-optimization.md) 和 [算法日志](docs/changelog/147-query-and-prefix-removal.md)。历史数据保留于 [查询基准档案](docs/benchmark/README.md) 与 [SIMD 字符串基准](docs/string_search_benchmark_report.md)，不作为当前版本的统一性能承诺。
 
 ### 关键技术
 
-| 技术 | 效果 |
-|------|------|
-| `getattrlistbulk` | 单次系统调用批量获取文件属性 — 避免逐文件 `stat` |
-| Trigram 倒排索引 | 亚线性搜索：比线性扫描快 33x–308x |
-| SoA 列式布局 | 缓存友好的内存访问模式，纯过滤查询 SIMD 批量判断 16 条记录 |
-| `__builtin_prefetch` | 预取距离 8，隐藏候选验证阶段的随机内存访问延迟 |
-| ARM NEON SIMD | 128-bit 向量化字符串匹配，2x 循环展开，逼近内存带宽上限 |
-| GCD 并行扫描 | Trigram 无法加速时启用多核线性扫描 |
-| StringPool 连续内存 | 文件名紧凑排列在单一 `char` 缓冲区，SIMD 友好 |
-| PathTable intern 化 | 目录路径仅存 `uint32` 索引 — 百万文件节省 ~550MB |
-| Generation 计数器 | 每 1024 次迭代检查，快速输入时零开销取消过时查询 |
-| APFS Firmlink 去重 | inode + devid 检测，正确处理 macOS Data/System 卷合并环路 |
-| Regex Trigram 预过滤 | 从正则中提取字面量生成 trigram 候选，~7s → <100ms |
-| 自适应 Trigram 旁路 | 候选集过大时自动回退并行扫描，避免无效索引查找 |
-| COW 无阻塞压缩 | 写时复制，压缩期间独占锁持有 < 100ms（原 30–60s） |
-| 分页增量持久化 | 仅写入脏页，典型 flush I/O 从 ~112MB 降至 KB 级 |
+| 技术 | 当前实现 |
+|------|----------|
+| `getattrlistbulk` | 单次系统调用批量读取文件属性，配合多线程扫描 |
+| 名称 trigram / 扩展名索引 | 缩小候选范围；常驻路径 trigram 已移除 |
+| 专用扫描与 Top-K | 单关键词专用循环；每线程保留前 K，合并后稳定排序；无限制查询仍保留全部命中 |
+| 目录候选 | 在共享目录树上匹配路径组件，再通过目录映射展开文件记录；宽候选回退全扫描 |
+| SoA / ARM NEON / GCD | 列式元数据、向量化字符串匹配与多核扫描 |
+| 压缩存储 | 共享大小写名称/目录、差分倒排表、窄列及溢出旁表 |
+| 前缀批量删除 | 先匹配目录；不少于 64 条记录时按倒排表分组删除，减少重复搬移 |
+| 会话取消 | GUI 连续查询按会话取消，HTTP 独立请求不被 GUI 输入误取消 |
+| RE2 / FilteredRE2 | 各线程独立正则缓存，结合安全的正则候选预过滤 |
+| v6 + WAL | Flat SoA 缓存、流式 CRC 与原子替换；全量保存仍有 I/O 写放大，并短暂延后更新 |
+| 分页桥接 | 主窗口与菜单栏共用引擎；编号快照按页生成结果，删除跳过墓碑，压缩后重新查询 |
 
 ### 测试体系
 
-79 个测试模块覆盖完整技术栈，支持 AddressSanitizer 和 ThreadSanitizer：
+核心回归、桥接快照及 UI 测试覆盖主要功能；提供 AddressSanitizer 和 ThreadSanitizer 构建：
 
 ```bash
 make test          # 快速单元测试 + 桥接层 lint
@@ -278,43 +294,35 @@ make test-slow     # 集成测试（全盘扫描、FSEvents、端到端）
 make test-all      # 全部测试
 make test-asan     # AddressSanitizer
 make test-tsan     # ThreadSanitizer
+make test-bridge-snapshot  # Objective-C++ 分页快照
 ```
 
 覆盖范围：
+
 - **核心引擎**：扫描、查询、变更、压缩、排序、路径搜索
-- **持久化**：WAL CRC 完整性、批量回放、竞态条件、分页持久化 v5
+- **持久化**：WAL CRC 完整性、批量回放、v5 兼容与 v6 保存/重载
 - **内容索引**：Trigram、压缩、修改时间跟踪、WAL 跟踪
 - **搜索/查询**：分词器、解析器、过滤器、日期过滤、结构化查询、正则 Trigram、高亮提示
 - **性能**：SIMD 搜索、千万条记录合成基准、Trigram 竞争测试
 - **集成**：线程安全、端到端、HTTP 引擎热替换、MCP 协议
-- **内存安全**：ASan + TSan 构建
+- **内存安全**：碰撞、窄列溢出、随机差分表增删、ASan + TSan 构建
+
+历史报告中的通过数与 sanitizer 结论只适用于各自分组和环境。详见 [变更日志](docs/changelog/README.md) 中的验证范围。
 
 ### 项目结构
 
-```
-MacEverything/
-├── Core/                  # C++20 核心引擎
-│   ├── SearchEngine       # Trigram 索引 + 并行查询（5 个 .cpp 文件）
-│   ├── DirectoryScanner   # 多线程批量扫描器
-│   ├── ContentIndex       # 全文倒排索引
-│   ├── IndexPersistence   # WAL + 分页持久化
-│   ├── FileSystemWatcher  # FSEvents 实时监控
-│   ├── HttpServer         # 内嵌 REST API 服务器
-│   ├── SIMDSearch         # ARM NEON 向量化搜索
-│   ├── QueryAST/Parser    # 完整查询语言管线
-│   ├── PathTable          # 字符串 intern 表
-│   └── ServiceEngine      # 生命周期编排
-├── Bridge/                # Objective-C++ 桥接层
-│   └── MacSearchBridge    # C++ ↔ Swift 零开销互操作
-├── App/                   # SwiftUI 应用层
-│   ├── ContentView        # 主搜索界面
-│   ├── SearchViewModel    # MVVM + 分级防抖
-│   ├── HotkeyManager      # 全局快捷键注册
-│   └── MCPConfigManager   # MCP 一键配置
-├── CLI/                   # 命令行工具
-│   ├── daemon_main        # 无头守护进程
-│   └── mcp_main           # MCP 服务器（stdio JSON-RPC）
-└── tests/                 # 79 个测试模块
+```text
+mac-everything/
+├── MacEverything/
+│   ├── Core/              # C++20 查询、扫描、压缩索引、v6/WAL、HTTP
+│   ├── Bridge/            # Objective-C++ 互操作与分页结果快照
+│   ├── App/               # SwiftUI 主窗口、菜单栏、快捷键、About
+│   ├── CLI/               # daemon 与 MCP stdio 服务器
+│   └── Assets.xcassets/   # 应用图标与菜单栏模板图标
+├── MacEverythingUITests/  # 原生 UI 测试
+├── tests/                 # C++ 回归与桥接测试
+├── assets/branding/       # logo、SVG 源文件、图标生成脚本
+└── docs/                  # 变更日志、审计与基准原始数据
 ```
 
 ## 参与贡献

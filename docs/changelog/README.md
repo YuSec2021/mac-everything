@@ -4,6 +4,13 @@
 
 > **注意：** 编号 058、060、097、106、107、113、117 各有两个条目，源于并行分支开发同时产出。文件名保留原样以维护 Git 历史引用。
 
+## 最新更新
+
+- [146：大索引内存优化与持久化降峰值](146-resident-memory-optimization.md)：共享目录/名称、差分倒排表、窄列、分配器配置与路径表压缩，附各轮内存数据和兼容性说明。
+- [147：查询扫描、Top-K 与目录批量删除优化](147-query-and-prefix-removal.md)：路径候选、专用循环、有界结果集、目录前缀定位与批量维护倒排表，附性能对照与验证范围。
+
+最新两条汇总 2026-10-21 至 2026-10-22 的已有实现与审计结果；测量口径和原始证据见各条目。历史条目记录当时实现，后续替换情况以最新日志为准。
+
 ## 变更索引
 
 | # | 类型 | 标题 | 日期 |
@@ -147,19 +154,34 @@
 | [130](130-publish-opensource-script.md) | chore | 开源发布脚本 (publish-opensource.sh) | 2026-04-19 |
 | [131](131-soa-tombstone-check.md) | performance | SoA Tombstone Check 优化 | 2026-04-19 |
 | [132](132-docs-release-preparation.md) | docs | 公开发布前文档审计与修复 | 2026-04-19 |
+| [133](133-v6-flat-soa-startup.md) | performance | v6 Flat SoA 持久化与两阶段启动 | 2026-04-19 |
+| [134](134-readme-restructure-dual-audience.md) | docs | README 用户与开发者双视角重构 | 2026-04-19 |
+| [135](135-p24-case-trigram-fix.md) | bugfix | 修复 case: 查询跳过 trigram 预过滤 | 2026-04-19 |
+| [136](136-v6-startup-perf-optimization.md) | performance | v6 Phase 1 启动加载优化 | 2026-04-19 |
+| [137](137-compiled-glob-evalterm.md) | performance | Glob 预编译与零分配匹配 | 2026-04-19 |
+| [138](138-extension-index.md) | performance | 扩展名倒排索引 | 2026-04-19 |
+| [139](139-re2-regex.md) | performance | 使用 RE2 加速正则匹配 | 2026-04-19 |
+| [140](140-diag-trigram-logging.md) | docs | Trigram 策略诊断日志 | 2026-04-19 |
+| [141](141-regex-filtered-re2.md) | bugfix | FilteredRE2 修复正则分支预过滤 | 2026-04-20 |
+| [142](142-re2-bench.md) | test | RE2 正则性能基准 | 2026-04-20 |
+| [143](143-per-thread-re2.md) | performance | 每线程 RE2 实例消除 DFA 锁竞争 | 2026-04-20 |
+| [144](144-fsevents-search-latency-test.md) | test | FSEvents 到可搜索的端到端延迟测试 | 2026-04-20 |
+| [145](145-session-query-cancel.md) | bugfix | 按会话隔离查询取消 | 2026-04-20 |
+| [146](146-resident-memory-optimization.md) | performance | 大索引内存优化与持久化降峰值 | 2026-10-22 |
+| [147](147-query-and-prefix-removal.md) | performance | 查询扫描、Top-K 与目录批量删除优化 | 2026-10-22 |
 
 ## 统计
 
 | 类型 | 数量 |
 |------|------|
-| bugfix | 50 |
+| bugfix | 53 |
 | feature | 33 |
-| performance | 31 |
+| performance | 39 |
 | refactor | 17 |
-| test | 5 |
-| docs | 2 |
+| test | 7 |
+| docs | 4 |
 | chore | 1 |
-| **合计** | **139 条 (132 个编号, 7 组重复编号各 2 条)** |
+| **合计** | **154 条 (147 个编号, 7 组重复编号各 2 条)** |
 
 ---
 
@@ -170,4 +192,6 @@
 | 2026-04-16 | 16 |
 | 2026-04-17 | 11 |
 | 2026-04-18 | 22 |
-| 2026-04-19 | 38 |
+| 2026-04-19 | 46 |
+| 2026-04-20 | 5 |
+| 2026-10-22 | 2 |

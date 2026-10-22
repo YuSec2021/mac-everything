@@ -1,12 +1,12 @@
 <p align="center">
-  <img src="MacEverything/Assets.xcassets/AppIcon.appiconset/icon_256.png" alt="MacEverything" width="128" />
+  <img src="assets/branding/app-icon.png" alt="MacEverything app icon" width="128" />
 </p>
 
 <h1 align="center">MacEverything</h1>
 
 <p align="center">
   <b>Instant file search for macOS</b> — find any file among millions in milliseconds.<br/>
-  Inspired by <a href="https://www.voidtools.com/">Everything</a> on Windows. Nothing else comes close on Mac.
+  Inspired by <a href="https://www.voidtools.com/">Everything</a> on Windows. Built with C++20 and SwiftUI.
 </p>
 
 <p align="center">
@@ -14,35 +14,40 @@
 </p>
 
 <p align="center">
-  <a href="#installation"><img src="https://img.shields.io/badge/macOS-13%2B-blue?logo=apple" alt="macOS 13+" /></a>
+  <a href="#installation"><img src="https://img.shields.io/badge/macOS-14%2B-blue?logo=apple" alt="macOS 14+" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License" /></a>
-  <a href="#testing"><img src="https://img.shields.io/badge/tests-79%20modules-brightgreen" alt="79 test modules" /></a>
+  <a href="#testing"><img src="https://img.shields.io/badge/tests-regression%20suites-brightgreen" alt="Regression test suites" /></a>
   <a href="#ai-tool-integration-mcp"><img src="https://img.shields.io/badge/MCP-compatible-blueviolet" alt="MCP Compatible" /></a>
 </p>
 
 ---
 
 <p align="center">
-  <img src="assets/screen-shot.jpg" alt="MacEverything Screenshot" width="720" />
+  <img src="assets/screen-shot.png" alt="MacEverything Screenshot" width="720" />
 </p>
+
+## Latest Updates · 2026-10-22
+
+Current version: **1.2 (Build 3)**. Created by **YuSec**.
+
+- **Smaller resident index**: shared directory/name storage, delta-compressed postings, compact path lookup and narrow metadata columns. A fixed snapshot with 6.38 million live records reached about **573 MiB** of ready physical footprint.
+- **Query and mutation improvements**: specialized substring loops, per-thread Top-K, directory candidates and batched posting removal. Deleting 41,562 records on the fixed snapshot dropped from about **1.4 s to 0.25 s**.
+- **Menu bar search and paged results**: the main window and popover share the index and query state; load 100 results initially, then fetch more while scrolling.
+- **New icon, logo and About window**: open **About MacEverything** from the app menu or the menu bar icon's context menu for the author, version, GitHub link and version notes.
+
+Figures come from existing local audits and depend on hardware and workload. See the [memory changelog](docs/changelog/146-resident-memory-optimization.md), [algorithm changelog](docs/changelog/147-query-and-prefix-removal.md) and [full history](docs/changelog/README.md) (Chinese).
 
 ## Feature Highlights
 
 ### Blazing Fast Search
 
-Index an entire disk — **5 million+ files in just 14 seconds** — then get results in **under 5ms** for every search. Two orders of magnitude faster than Spotlight.
+Name trigrams and extension indexes narrow the candidates, while the parallel query engine evaluates complex conditions. On a fixed snapshot with 6.38 million live records, warm samples measured about **0.93 ms** for `*.swift` and **6.13 ms** for `readme`; broad directory queries can take tens of milliseconds.
 
-| Comparison | MacEverything | Spotlight | `find` |
-|------------|:---:|:---:|:---:|
-| Index 5M files | ~14s | Minutes+ | No index |
-| Search latency | **< 5ms** | 200ms–2s | 5–30s |
-| Real-time monitoring | FSEvents | FSEvents | None |
-| Content search | Trigram index | Metadata-heavy | `grep` |
-| AI tool integration | Built-in MCP | No | No |
+These are local core-engine timings, excluding GUI debounce, bridging and rendering. Dataset, query and result limits affect latency. See the developer section and the [measurement report](docs/audits/2026-10-22/path-table-dir-runs/report.md).
 
 ### Always at Your Fingertips
 
-Press **`Option+Space`** to summon the search window anytime (hotkey is customizable). The search bar auto-focuses — start typing immediately, find what you need, and move on. Supports launch-at-login with minimized background mode, staying out of your workflow.
+Press **`Option+Space`** to open the menu bar search panel by default. Configure the shortcut and its target in Shortcut Settings. Left-click the menu bar icon to search, or right-click for settings. The panel focuses the input automatically; **Escape** dismisses it, and you can continue the same query in the main window. Launch at login and minimized startup are supported.
 
 ### Smart Input Experience
 
@@ -101,7 +106,7 @@ Type `infile:keyword` to search file contents — results include highlighted co
 ### Real-Time Sync, Always Up to Date
 
 - **File monitoring** — FSEvents-based real-time file system listener; new, renamed, or deleted files appear in search results immediately
-- **Two-phase instant startup** — loads disk cache on launch (searchable immediately), then catches up with changes via FSEvents in the background. Zero wait time
+- **Two-phase instant startup** — loads the v6 cache to make search available, then builds acceleration indexes and catches up with changes in the background; queries can fall back to scanning before indexes are ready
 - **Focus-aware power saving** — pauses refresh when the window is in the background, batch-catches up on refocus. Near-zero background CPU usage
 
 ### Interaction Details
@@ -111,6 +116,8 @@ Type `infile:keyword` to search file contents — results include highlighted co
 - **Context menu** — Open / Reveal in Finder / Copy Path
 - **Cmd+Click** — quickly locate files in Finder
 - **Recent files** — automatically shows recently modified files when the search bar is empty
+- **Quick Look** — press **Space** while the result list has focus to preview a file, then **Escape** to close the preview
+- **About** — view YuSec, version 1.2 (Build 3), and the GitHub link; [light](assets/branding/previews/about-light.png) / [dark](assets/branding/previews/about-dark.png) previews
 
 ### AI Tool Integration (MCP)
 
@@ -148,22 +155,29 @@ curl "http://localhost:19860/api/status"                          # Index status
 
 #### Download DMG (Recommended)
 
-1. Download `MacEverything.dmg` from [Releases](../../releases)
+1. Download `MacEverything.dmg` from [Releases](https://github.com/YuSec2021/mac-everything/releases)
 2. Drag `MacEverything.app` to Applications
 3. Launch and grant **Full Disk Access** when prompted
-4. Wait for initial scan (~14 seconds)
+4. Allow the initial index to build; time depends on the disk, file count and access permissions
 5. Press `Option+Space` to start searching
 
 #### Build from Source
 
-**Requirements:** macOS 13+, Xcode 15+
+**Requirements:** macOS 14+, Xcode 15+
 
 ```bash
-git clone https://github.com/user/MacEverything.git && cd MacEverything
+brew install re2 abseil
+git clone https://github.com/YuSec2021/mac-everything.git
+cd mac-everything
 
 xcodebuild -project MacEverything.xcodeproj -scheme MacEverything \
   -configuration Release build SYMROOT=build
 
+# Install and launch
+ditto build/Release/MacEverything.app /Applications/MacEverything.app
+open /Applications/MacEverything.app
+
+# Optional: package a DMG
 hdiutil create -volname MacEverything \
   -srcfolder build/Release/MacEverything.app \
   -ov -format UDZO MacEverything.dmg
@@ -211,66 +225,68 @@ The same C++20 core engine powers three deployment modes:
 | Component | Key Design |
 |-----------|-----------|
 | **DirectoryScanner** | Multi-threaded work-stealing + `getattrlistbulk` single-syscall bulk attribute reads, 4–32 threads adaptive |
-| **SearchEngine** | Trigram inverted index (name + path dual indexes) + competitive optimal candidate selection + SoA columnar filtering |
+| **SearchEngine** | Name trigram + extension indexes; directory candidates, parallel scans and per-thread Top-K, with stable score/path-length/record-ID ordering |
 | **ContentIndex** | Trigram full-text inverted index, FNV-1a hash incremental updates, only re-indexes changed files |
-| **SIMDSearch** | ARM NEON 128-bit first-last byte vectorized matching + 2x loop unrolling, 11.5 GB/s single-thread |
-| **IndexPersistence** | WAL + CRC32 + paged dirty-page flushing + atomic rename, COW non-blocking compaction (lock held < 100ms) |
+| **SIMDSearch** | ARM NEON 128-bit first-last byte vectorized matching + 2x loop unrolling |
+| **IndexPersistence / FlatIndexWriter** | v6 Flat SoA + WAL + streaming CRC + atomic rename; shared read views for saving, with mutations queued during serialization |
 | **FileSystemWatcher** | FSEvents + eventId incremental replay + log truncation detection with automatic subtree rescan |
-| **PathTable** | Path string interning — directory paths stored as `uint32` index, saving ~550MB at million-file scale |
+| **DirectoryPool / FoldedNamePool** | Parent-linked directory components; original/lowercase bytes shared where equal, paths reconstructed on demand |
+| **PathRecordTable / DirRecordMap** | 4-byte record slots for path lookup; CSR record runs and append tails |
+| **PackedPostingList / NarrowColumn** | Varint delta postings with sparse checkpoints; narrow size/time columns with exact overflow storage |
 | **QueryParser** | Full AST pipeline: Tokenizer → FilterParser → Parser → QueryAST, 30+ filter keywords |
 
 ### Benchmarks
 
-Test environment: macOS Darwin 24.3.0, **5.4 million indexed files**, 48 query types:
+Measurements from **2026-10-22** use a fixed v6 snapshot: 6,460,706 record slots, **6,381,948 live records** and 707,177 parent directories. Queries run in a separate Release/O2 core process, with one warmup and the median of five runs, capped at 10,000 results. GUI overhead is excluded.
 
-#### Search Latency
+#### Query Latency
 
-| Query Type | Avg Latency | Example |
-|------------|:-----------:|---------|
-| Long keywords (7+ chars) | **0.1–1ms** | `screenshot` 0.1ms, `dockerfile` 0.1ms |
-| Medium keywords (4–6 chars) | **1–5ms** | `readme` 1.2ms, `config` 4.7ms |
-| Glob patterns | **0.7–18ms** | `*.cpp` 0.7ms, `*.swift` 1.5ms |
-| Path queries | **3–32ms** | `package.json` 2.9ms |
-| All 48 queries (average) | **10.5ms** | Latest results after SoA optimization |
+| Query | Median | Execution strategy |
+|-------|-------:|--------------------|
+| `*.swift` | 0.93 ms | Name trigram |
+| `readme` | 6.13 ms | Name trigram |
+| `size:>1mb` | 2.12 ms | Parallel SoA filtering |
+| `type:folder` | 2.09 ms | Parallel SoA filtering |
+| `path:MacEverything ext:swift` | 0.05 ms | Extension index |
+| `MacEverything/a` | 34.62 ms | Directory scan and record expansion |
+| `site-packages/a` | 49.96 ms | Directory scan and record expansion |
 
-#### Trigram vs Linear Scan
+Sources: [path-table report](docs/audits/2026-10-22/path-table-dir-runs/report.md) and [raw query output](docs/audits/2026-10-22/path-table-dir-runs/after.txt). These warm samples do not represent every query or end-to-end latency.
 
-| Query | Trigram | Linear Scan | Speedup |
-|-------|:------:|:------:|:------:|
-| `node_modules` | 0.5ms | 154ms | **308x** |
-| `application` | 2.1ms | 175ms | **83x** |
-| `readme` | 1.2ms | 49ms | **41x** |
+#### Memory and Incremental Updates
 
-#### SIMD String Search (Apple M3 Pro)
+| Optimization round | Before | After |
+|--------------------|-------:|------:|
+| Narrow columns, 32-bit hashes and allocator setting: ready footprint | 1266.88 MiB | 708.25 MiB |
+| Path table, directory runs and removal of inode/devId columns: ready footprint | 702.3 MiB | 573.0 MiB |
+| Top-K: sampled extra footprint for `size:>=0` | 179.24 MiB | 2.36 MiB |
+| Batched index maintenance: deleting 41,562 records | 1396.9 / 1430.1 ms | 245.7 / 252.8 ms |
 
-| Method | Throughput | vs `std::string::find` |
-|--------|:---------:|:----------------------:|
-| `std::string::find` | 1.2 GB/s | baseline |
-| **NEON 128-bit (single-thread)** | **11.5 GB/s** | **9.5x** |
-| **NEON 128-bit (12 threads)** | **74.3 GB/s** | **60.7x** |
+Rows come from separate rounds and cannot be combined into one end-to-end measurement. Memory figures are physical footprint; query peaks are sampled values, distinct from RSS or structure capacity. Compression adds decoding and path reconstruction costs, so some queries trade speed for space.
+
+The desktop process in the final memory round had about 6.42 million live records: `footprint` measured **600 MB** after Phase 2 and **612 MB** after about 3.5 minutes. This short observation does not establish a sub-1-GiB bound for long runs, saving, compaction or enabled content indexing.
+
+See the [memory changelog](docs/changelog/146-resident-memory-optimization.md) and [algorithm changelog](docs/changelog/147-query-and-prefix-removal.md) for measurement conditions, compatibility and test scope. Older results remain in the [query benchmark archive](docs/benchmark/README.md) and [SIMD string benchmark](docs/string_search_benchmark_report.md); they are historical measurements rather than current universal performance claims.
 
 ### Key Technologies
 
-| Technology | Impact |
-|------------|--------|
-| `getattrlistbulk` | Single syscall for bulk file attributes — avoids per-file `stat` |
-| Trigram inverted index | Sub-linear search: 33x–308x faster than linear scan |
-| SoA columnar layout | Cache-friendly memory access, SIMD batch-checks 16 records for pure filter queries |
-| `__builtin_prefetch` | Prefetch distance 8, hides random memory access latency during candidate verification |
-| ARM NEON SIMD | 128-bit vectorized string matching, 2x loop unrolling, approaches memory bandwidth ceiling |
-| GCD parallel scan | Multi-core linear scan when trigram can't accelerate |
-| StringPool contiguous memory | Filenames packed in a single `char` buffer, SIMD-friendly |
-| PathTable interning | Directory paths stored as `uint32` index — saves ~550MB at million-file scale |
-| Generation counter | Checked every 1024 iterations, zero-overhead cancellation of stale queries during fast typing |
-| APFS Firmlink dedup | inode + devid detection, correctly handles macOS Data/System volume merge loops |
-| Regex Trigram pre-filter | Extracts literals from regex to generate trigram candidates, ~7s → <100ms |
-| Adaptive Trigram bypass | Falls back to parallel scan when candidate set is too large, avoiding wasteful index lookups |
-| COW non-blocking compaction | Copy-on-write, exclusive lock held < 100ms during compaction (was 30–60s) |
-| Paged incremental persistence | Only writes dirty pages, typical flush I/O drops from ~112MB to KB-level |
+| Technology | Current implementation |
+|------------|------------------------|
+| `getattrlistbulk` | Bulk file attributes per syscall, with multi-threaded scanning |
+| Name trigram / extension indexes | Narrow candidates; the resident path trigram index has been removed |
+| Specialized scans and Top-K | Dedicated substring loops; per-thread top K merged with stable ordering; unlimited queries still retain all matches |
+| Directory candidates | Match components in the shared directory tree, then expand records; broad candidates fall back to a full scan |
+| SoA / ARM NEON / GCD | Columnar metadata, vectorized string matching and multi-core scanning |
+| Compressed storage | Shared original/lowercase names and directories, delta postings, narrow columns and overflow maps |
+| Batched prefix removal | Match directories first; group posting removals when at least 64 records match to reduce repeated data movement |
+| Session cancellation | Successive GUI queries cancel within their session; independent HTTP requests remain isolated |
+| RE2 / FilteredRE2 | Per-thread regex caches with safe regex candidate pre-filtering |
+| v6 + WAL | Flat SoA cache, streaming CRC and atomic replacement; full saves still amplify I/O and briefly defer mutations |
+| Paged bridge | Shared engine across windows; ID snapshots produce pages, skip tombstones and require a new query after compaction |
 
 ### Testing
 
-79 test modules covering the full stack, with AddressSanitizer and ThreadSanitizer support:
+Core regression suites, bridge snapshots and UI tests cover major functionality. AddressSanitizer and ThreadSanitizer builds are available:
 
 ```bash
 make test          # Fast unit tests + bridge lint
@@ -278,43 +294,35 @@ make test-slow     # Integration tests (full disk scan, FSEvents, E2E)
 make test-all      # All tests
 make test-asan     # AddressSanitizer
 make test-tsan     # ThreadSanitizer
+make test-bridge-snapshot  # Objective-C++ paged snapshots
 ```
 
 Coverage:
+
 - **Core engine**: scan, query, mutation, compaction, ranking, path search
-- **Persistence**: WAL CRC integrity, batch replay, race conditions, paged persistence v5
+- **Persistence**: WAL CRC integrity, batch replay, v5 compatibility and v6 save/reload
 - **Content index**: trigram, compaction, mod-time tracking, WAL tracking
 - **Search/Query**: tokenizer, parser, filters, date filters, structured queries, regex trigram, highlight hints
 - **Performance**: SIMD search, 10M-record synthetic benchmarks, trigram competition
 - **Integration**: thread safety, E2E, HTTP engine hot-swap, MCP protocol
-- **Memory safety**: ASan + TSan builds
+- **Memory safety**: hash collisions, narrow-column overflow, randomized delta-list mutations, ASan + TSan builds
+
+Historical pass counts and sanitizer findings apply to the specific groups and environments in each report. See the [changelog](docs/changelog/README.md) for validation scope.
 
 ### Project Structure
 
-```
-MacEverything/
-├── Core/                  # C++20 core engine
-│   ├── SearchEngine       # Trigram index + parallel query (5 .cpp files)
-│   ├── DirectoryScanner   # Multi-threaded bulk scanner
-│   ├── ContentIndex       # Full-text inverted index
-│   ├── IndexPersistence   # WAL + paged persistence
-│   ├── FileSystemWatcher  # FSEvents real-time monitor
-│   ├── HttpServer         # Embedded REST API server
-│   ├── SIMDSearch         # ARM NEON vectorized search
-│   ├── QueryAST/Parser    # Full query language pipeline
-│   ├── PathTable          # String interning table
-│   └── ServiceEngine      # Lifecycle orchestration
-├── Bridge/                # Objective-C++ bridge
-│   └── MacSearchBridge    # C++ ↔ Swift zero-overhead interop
-├── App/                   # SwiftUI application
-│   ├── ContentView        # Main search UI
-│   ├── SearchViewModel    # MVVM + tiered debouncing
-│   ├── HotkeyManager      # Global hotkey registration
-│   └── MCPConfigManager   # One-click MCP setup
-├── CLI/                   # Command-line tools
-│   ├── daemon_main        # Headless daemon
-│   └── mcp_main           # MCP server (stdio JSON-RPC)
-└── tests/                 # 79 test modules
+```text
+mac-everything/
+├── MacEverything/
+│   ├── Core/              # C++20 queries, scanning, compressed indexes, v6/WAL, HTTP
+│   ├── Bridge/            # Objective-C++ interop and paged result snapshots
+│   ├── App/               # SwiftUI main window, menu bar, shortcuts, About
+│   ├── CLI/               # Daemon and MCP stdio server
+│   └── Assets.xcassets/   # App icon and menu bar template
+├── MacEverythingUITests/  # Native UI tests
+├── tests/                 # C++ regression and bridge tests
+├── assets/branding/       # Logos, SVG sources and icon generation script
+└── docs/                  # Changelogs, audits and raw benchmark data
 ```
 
 ## Contributing
