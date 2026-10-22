@@ -791,7 +791,10 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
     const size_t workCount = useTrigramIndex ? candidates.size() : totalSize;
     const unsigned numThreads = workCount < 10000 ? 1 : std::clamp(std::thread::hardware_concurrency(), 1u, 32u);
     const size_t chunkSize = (workCount + numThreads - 1) / numThreads;
-    __block std::vector<std::vector<Match>> threadResults(numThreads);
+    // Blocks capture the buffer pointer, not a __block vector: a block copy inside dispatch_apply would
+    // otherwise move the vector to the heap after TSan's release fence and race with the workers' reads.
+    std::vector<std::vector<Match>> threadResults(numThreads);
+    std::vector<Match>* const threadResultSlots = threadResults.data();
     auto perThreadCaches = numThreads > 1 ? cloneRegexCachePerThread(regexCache, numThreads) : std::vector<RegexCache>{};
     const RegexCache* caches = numThreads > 1 ? perThreadCaches.data() : &regexCache;
 
@@ -848,7 +851,7 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
     auto beforePhase = std::chrono::steady_clock::now();
     auto worker = ^(size_t t) {
         const size_t start = t * chunkSize, end = std::min(start + chunkSize, workCount);
-        RankedMatches local{threadResults[t], maxResults, pureFilter};
+        RankedMatches local{threadResultSlots[t], maxResults, pureFilter};
         if (!pureFilter) { scanRecords(start, end, local, caches[t]); return; }
         std::vector<char> buffer;
         // Pure metadata matches rank by record ID, so later hits cannot beat the first K.
