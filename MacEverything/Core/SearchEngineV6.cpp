@@ -32,10 +32,13 @@ void SearchEngine::loadRecordsV6(StringPool&& origNamePool,
     pathPool = StringPool{};
     lowerPathPool = StringPool{};
     types_ = std::move(types);
-    sizes_ = std::move(sizes);
-    modTimes_ = std::move(modTimes);
+    sizes_.assign(sizes);
+    std::vector<uint64_t>{}.swap(sizes);
+    modTimes_.assign(modTimes);
+    std::vector<int64_t>{}.swap(modTimes);
     inodes_ = std::move(inodes);
-    devIds_ = std::move(devIds);
+    devIds_.assign(devIds);
+    std::vector<int32_t>{}.swap(devIds);
 
     // Rebuild pathLookup_ and lowerPathLookup_ from pathPool_ entries
     pathLookup_.clear();
@@ -99,7 +102,7 @@ void SearchEngine::completePhase2() {
     // Only snapshot types_ (lightweight ~5MB for 5.5M records) instead of
     // the full SoA data (~440MB if using FileRecord structs).
     std::vector<uint8_t> snapTypes;
-    std::vector<int64_t> snapModTimes;
+    ModTimeColumn snapModTimes;
     StringPool snapNamePool;
     std::vector<uint32_t> snapPathIndices;
     uint32_t snapPathPoolSize;
@@ -121,7 +124,7 @@ void SearchEngine::completePhase2() {
     auto pathIdxToRecords = buildPathIdxToRecordsFromData(snapTypes, snapPathIndices, snapPathPoolSize);
     std::vector<uint32_t>{}.swap(snapPathIndices);
     auto recentCache = buildRecentCacheFromData(snapTypes, snapModTimes, kRecentCacheSize);
-    std::vector<int64_t>{}.swap(snapModTimes);
+    ModTimeColumn{}.swap(snapModTimes);
 
     LOG_INFO("SearchEngine", "Phase 2: indices built, swapping under lock...");
 

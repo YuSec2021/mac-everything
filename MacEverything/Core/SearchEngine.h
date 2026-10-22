@@ -6,6 +6,7 @@
 #include "FoldedNamePool.h"
 #include "CompactPathIndex.h"
 #include "PackedPostingList.h"
+#include "NarrowColumn.h"
 #include "SIMDSearch.h"
 #include <vector>
 #include <string>
@@ -108,6 +109,11 @@ struct QueryCancelCtx {
 
 class SearchEngine {
 public:
+    // Narrow per-record columns; out-of-range values keep exact side entries.
+    using SizeColumn = me::NarrowColumn<uint64_t, uint32_t>;
+    using ModTimeColumn = me::NarrowColumn<int64_t, uint32_t>;
+    using DevIdColumn = me::DictColumn<int32_t>;
+
     /// Takes ownership of scanned records and pre-computes lowercase names.
     void loadRecords(std::vector<FileRecord>&& records);
 
@@ -149,10 +155,10 @@ public:
         const DirectoryPool& pathPool;
         DirectoryPool::LowerView lowerPathPool;
         const std::vector<uint8_t>& types;
-        const std::vector<uint64_t>& sizes;
-        const std::vector<int64_t>& modTimes;
+        const SizeColumn& sizes;
+        const ModTimeColumn& modTimes;
         const std::vector<uint64_t>& inodes;
-        const std::vector<int32_t>& devIds;
+        const DevIdColumn& devIds;
         uint32_t liveCount;
     };
     V6ReadView readViewForV6() const;
@@ -386,10 +392,10 @@ private:
 
     // SoA columnar arrays — the canonical per-record storage
     std::vector<uint8_t>  types_;          // 1=file, 2=directory, 0=tombstone
-    std::vector<uint64_t> sizes_;          // file size in bytes
-    std::vector<int64_t>  modTimes_;       // modification time (Unix epoch)
+    SizeColumn            sizes_;          // file size in bytes
+    ModTimeColumn         modTimes_;       // modification time (Unix epoch)
     std::vector<uint64_t> inodes_;         // inode number
-    std::vector<int32_t>  devIds_;         // device ID
+    DevIdColumn           devIds_;         // device ID
     me::CompactPathIndex pathLookup_; // original path hash -> pathPool_ index
     me::CompactPathIndex lowerPathLookup_; // lowercase path hash -> pathPool_ index
     me::CompactPathIndex pathIndex_;
@@ -585,6 +591,6 @@ private:
     /// Build recent cache from standalone data (no member access, used by COW compaction)
     static std::set<RecentEntry>
         buildRecentCacheFromData(const std::vector<uint8_t>& types,
-                                 const std::vector<int64_t>& modTimes,
+                                 const ModTimeColumn& modTimes,
                                  uint32_t cacheSize);
 };

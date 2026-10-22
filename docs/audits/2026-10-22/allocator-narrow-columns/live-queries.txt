@@ -1,0 +1,5 @@
+# Live app HTTP API (127.0.0.1:19860/api/search, limit=3), 2026-10-22 10:26; paths omitted.
+q="MacEverything/readme"  results=3  first=README.md (project root)
+q="size:>4gb"             results=3  first size=8485014416 bytes (exact, read from side map)
+q="ext:swift"             results=3
+status: recordCount=6750598 liveRecordCount=6408772

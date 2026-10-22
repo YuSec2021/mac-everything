@@ -95,6 +95,11 @@ private:
     static bool writeArraySection(FILE* f, const std::vector<T>& vec,
                                   uint32_t& outSize, uint32_t& outCRC);
 
+    /// Write a narrow column as its wide on-disk array, one buffer at a time
+    template<typename Column>
+    static bool writeColumnSection(FILE* f, const Column& column,
+                                   uint32_t& outSize, uint32_t& outCRC);
+
     /// Write metadata key-value pairs section
     static bool writeMetadataSection(FILE* f, const IndexMetadata& meta,
                                      uint32_t& outSize, uint32_t& outCRC);

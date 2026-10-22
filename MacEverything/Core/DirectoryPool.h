@@ -18,7 +18,8 @@ class DirectoryPool {
     std::unordered_map<uint32_t, std::string> lowerOverrides_;
 
     uint32_t child(uint32_t parent, std::string_view component) {
-        const size_t key = std::hash<std::string_view>{}(component) ^ (size_t(parent) * 0x9e3779b97f4a7c15ULL);
+        const uint64_t wide = std::hash<std::string_view>{}(component) ^ (uint64_t(parent) * 0x9e3779b97f4a7c15ULL);
+        const auto key = static_cast<uint32_t>(wide ^ (wide >> 32));
         auto [first, last] = edges_.equal_range(key);
         for (auto it = first; it != last; ++it) {
             const auto& node = nodes_[it->second];

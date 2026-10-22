@@ -44,7 +44,7 @@ uint32_t SearchEngine::internPath(const std::string& path) {
     auto it = me::findPathRecord(pathLookup_, path, [this](uint32_t i) { return pathPool_.view(i); });
     if (it != pathLookup_.end()) return it->second;
     uint32_t pIdx = pathPool_.append(path);
-    pathLookup_.emplace(std::hash<std::string_view>{}(path), pIdx);
+    pathLookup_.emplace(me::PathHash{}(path), pIdx);
     me::setPathRecord(lowerPathLookup_, pathPool_.lower().view(pIdx), pIdx,
                       [this](uint32_t i) { return pathPool_.lower().view(i); });
     return pIdx;
@@ -53,10 +53,10 @@ uint32_t SearchEngine::internPath(const std::string& path) {
 void SearchEngine::tombstoneAt(uint32_t idx) {
     types_[idx] = 0;
     markPageDirty(idx);
-    sizes_[idx] = 0;
-    modTimes_[idx] = 0;
+    sizes_.set(idx, 0);
+    modTimes_.set(idx, 0);
     if (idx < inodes_.size()) inodes_[idx] = 0;
-    if (idx < devIds_.size()) devIds_[idx] = 0;
+    if (idx < devIds_.size()) devIds_.set(idx, 0);
     names_.tombstone(idx);
 }
 
@@ -88,10 +88,10 @@ void SearchEngine::loadRecords(std::vector<FileRecord>&& records) {
     devIds_.resize(n);
     for (size_t i = 0; i < n; i++) {
         types_[i] = records[i].type;
-        sizes_[i] = records[i].size;
-        modTimes_[i] = static_cast<int64_t>(records[i].modTime);
+        sizes_.set(i, records[i].size);
+        modTimes_.set(i, static_cast<int64_t>(records[i].modTime));
         inodes_[i] = records[i].inode;
-        devIds_[i] = records[i].devId;
+        devIds_.set(i, records[i].devId);
     }
 
     // Pre-compute lowercase names into a temporary vector (parallel),
@@ -186,10 +186,10 @@ void SearchEngine::loadRecordsV5(std::vector<FileRecord>&& records,
     devIds_.resize(n);
     for (size_t i = 0; i < n; i++) {
         types_[i] = records[i].type;
-        sizes_[i] = records[i].size;
-        modTimes_[i] = static_cast<int64_t>(records[i].modTime);
+        sizes_.set(i, records[i].size);
+        modTimes_.set(i, static_cast<int64_t>(records[i].modTime));
         inodes_[i] = records[i].inode;
-        devIds_[i] = records[i].devId;
+        devIds_.set(i, records[i].devId);
     }
 
     names_.clear();
@@ -514,10 +514,10 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     // ── Phase 1: Snapshot under shared_lock ──
     // Queries continue unblocked during snapshot copy.
     std::vector<uint8_t> snapTypes;
-    std::vector<uint64_t> snapSizes;
-    std::vector<int64_t> snapModTimes;
+    SizeColumn snapSizes;
+    ModTimeColumn snapModTimes;
     std::vector<uint64_t> snapInodes;
-    std::vector<int32_t> snapDevIds;
+    DevIdColumn snapDevIds;
     FoldedNamePool snapNames;
     const auto snapNamePool = snapNames.lower();
     const auto snapOrigNamePool = snapNames.original();
@@ -551,10 +551,10 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     remap.reserve(snapSize);
 
     std::vector<uint8_t> cdTypes;
-    std::vector<uint64_t> cdSizes;
-    std::vector<int64_t> cdModTimes;
+    SizeColumn cdSizes;
+    ModTimeColumn cdModTimes;
     std::vector<uint64_t> cdInodes;
-    std::vector<int32_t> cdDevIds;
+    DevIdColumn cdDevIds;
     cdTypes.reserve(snapSize);
     cdSizes.reserve(snapSize);
     cdModTimes.reserve(snapSize);
@@ -591,11 +591,11 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
             newPIdx = cdPlIt->second;
         } else {
             newPIdx = cdPathPool.append(origPath);
-            cdPathLookup.emplace(std::hash<std::string_view>{}(origPath), newPIdx);
+            cdPathLookup.emplace(me::PathHash{}(origPath), newPIdx);
             me::setPathRecord(cdLowerPathLookup, cdLowerPathPool.view(newPIdx), newPIdx,
                               [&](uint32_t i) { return cdLowerPathPool.view(i); });
         }
-        cdPathIndex.emplace(std::hash<std::string_view>{}(fullPathLower), newIdx);
+        cdPathIndex.emplace(me::PathHash{}(fullPathLower), newIdx);
         // Copy name from snapshot pool into compacted pool
         cdNames.append(snapOrigNamePool.view(i), snapNamePool.view(i));
         cdPathIndices.push_back(newPIdx);
@@ -608,10 +608,10 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     uint32_t cdLiveCount = static_cast<uint32_t>(cdTypes.size());
     // These snapshot columns are no longer needed for the replay step.
     std::vector<uint8_t>{}.swap(snapTypes);
-    std::vector<uint64_t>{}.swap(snapSizes);
-    std::vector<int64_t>{}.swap(snapModTimes);
+    SizeColumn{}.swap(snapSizes);
+    ModTimeColumn{}.swap(snapModTimes);
     std::vector<uint64_t>{}.swap(snapInodes);
-    std::vector<int32_t>{}.swap(snapDevIds);
+    DevIdColumn{}.swap(snapDevIds);
 
     // Build trigram index, path trigram index, extension index, and recent cache outside any lock
     auto cdTrigramIndex = buildTrigramIndexFromData(cdTypes, cdNamePool);
@@ -750,7 +750,7 @@ std::vector<uint32_t> SearchEngine::recentIndices(uint32_t count) const {
 
 std::set<SearchEngine::RecentEntry>
 SearchEngine::buildRecentCacheFromData(const std::vector<uint8_t>& types,
-                                       const std::vector<int64_t>& modTimes,
+                                       const ModTimeColumn& modTimes,
                                        uint32_t cacheSize) {
     if (cacheSize == 0) return {};
     std::vector<RecentEntry> best;

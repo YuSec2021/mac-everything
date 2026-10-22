@@ -6,6 +6,7 @@
 #include "ServiceEngine.h"
 #include "PathUtils.h"
 #include "Logger.h"
+#include "MallocTuning.h"
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -106,6 +107,8 @@ static void installSignalHandlers() {
 // ═══════════════════════════════════════════════════════
 
 int main(int argc, char* argv[]) {
+    me::ensureMallocLargeCacheDisabled(argv);
+
     // Disable buffering so output appears immediately (important for background mode)
     setbuf(stdout, nullptr);
     setbuf(stderr, nullptr);

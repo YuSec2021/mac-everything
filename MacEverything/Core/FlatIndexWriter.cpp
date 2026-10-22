@@ -133,6 +133,26 @@ bool FlatIndexWriter::writeArraySection(FILE* f, const std::vector<T>& vec,
     return true;
 }
 
+template<typename Column>
+bool FlatIndexWriter::writeColumnSection(FILE* f, const Column& column,
+                                          uint32_t& outSize, uint32_t& outCRC) {
+    using T = typename Column::value_type;
+    std::vector<T> chunk;
+    chunk.reserve(std::min<size_t>(column.size(), 8192));
+    outSize = static_cast<uint32_t>(column.size() * sizeof(T));
+    outCRC = 0;
+    for (size_t start = 0; start < column.size(); start += chunk.capacity()) {
+        const size_t end = std::min(column.size(), start + chunk.capacity());
+        chunk.clear();
+        for (size_t i = start; i < end; ++i) chunk.push_back(column[i]);
+        const size_t bytes = chunk.size() * sizeof(T);
+        if (fwrite(chunk.data(), 1, bytes, f) != bytes) return false;
+        outCRC = IndexWAL::crc32(chunk.data(), bytes, outCRC);
+    }
+    if (column.size() == 0) outCRC = IndexWAL::crc32(nullptr, 0);
+    return true;
+}
+
 // ---------------------------------------------------------------------------
 // Metadata section helpers
 // ---------------------------------------------------------------------------
@@ -291,7 +311,7 @@ bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& met
     {
         uint64_t offset = static_cast<uint64_t>(ftell(f));
         uint32_t size, crc;
-        ok = ok && writeArraySection(f, snap.sizes, size, crc);
+        ok = ok && writeColumnSection(f, snap.sizes, size, crc);
         fillSection(6, kSectionSizes, offset, size, crc);
     }
 
@@ -299,7 +319,7 @@ bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& met
     {
         uint64_t offset = static_cast<uint64_t>(ftell(f));
         uint32_t size, crc;
-        ok = ok && writeArraySection(f, snap.modTimes, size, crc);
+        ok = ok && writeColumnSection(f, snap.modTimes, size, crc);
         fillSection(7, kSectionModTimes, offset, size, crc);
     }
 
@@ -315,7 +335,7 @@ bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& met
     {
         uint64_t offset = static_cast<uint64_t>(ftell(f));
         uint32_t size, crc;
-        ok = ok && writeArraySection(f, snap.devIds, size, crc);
+        ok = ok && writeColumnSection(f, snap.devIds, size, crc);
         fillSection(9, kSectionDevIds, offset, size, crc);
     }
 

@@ -27,6 +27,86 @@ static void runMemoryOptimizationTests() {
     }
 
     {
+        SearchEngine::SizeColumn sizes;
+        const std::vector<uint64_t> wide{0, 1, UINT32_MAX - 1, UINT32_MAX, uint64_t(UINT32_MAX) + 1, UINT64_MAX};
+        for (uint64_t v : wide) sizes.push_back(v);
+        bool same = sizes.size() == wide.size();
+        for (size_t i = 0; same && i < wide.size(); ++i) same = sizes[i] == wide[i];
+        check(same && sizes.overflowCount() == 3, "NarrowColumn: sizes at and past 32 bits keep exact values");
+        sizes.set(4, 7);
+        sizes.set(1, UINT64_MAX - 1);
+        check(sizes[4] == 7 && sizes[1] == UINT64_MAX - 1 && sizes.overflowCount() == 3,
+              "NarrowColumn: set moves rows between narrow storage and the side map");
+        auto copy = sizes;
+        sizes.resize(2);
+        check(sizes.size() == 2 && sizes.overflowCount() == 1 && copy[5] == UINT64_MAX,
+              "NarrowColumn: shrinking drops side entries; copies stay independent");
+        sizes.resize(4);
+        check(sizes[2] == 0 && sizes[3] == 0, "NarrowColumn: growth fills zeros");
+
+        SearchEngine::ModTimeColumn times(std::vector<int64_t>{-1, 0, 1792577860, INT64_MIN, int64_t(UINT32_MAX)});
+        check(times[0] == -1 && times[1] == 0 && times[2] == 1792577860 && times[3] == INT64_MIN
+              && times[4] == int64_t(UINT32_MAX) && times.overflowCount() == 3,
+              "NarrowColumn: negative and out-of-range modification times keep exact values");
+
+        SearchEngine::DevIdColumn devs;
+        for (int32_t i = 0; i < 300; ++i) devs.push_back(i * 7919 - 1000);
+        bool exact = true;
+        for (int32_t i = 0; i < 300; ++i) exact = exact && devs[i] == i * 7919 - 1000;
+        check(exact && devs.dictionarySize() == 255 && devs.overflowCount() == 45,
+              "DictColumn: device IDs past 255 distinct values keep exact values");
+        devs.set(299, 0 * 7919 - 1000);
+        devs.set(0, 12345);
+        check(devs[299] == -1000 && devs[0] == 12345 && devs.overflowCount() == 45,
+              "DictColumn: set reuses dictionary codes and falls back to the side map");
+
+        // 32-bit keys must be produced the same way on insert and lookup.
+        me::CompactPathIndex paths;
+        std::vector<std::string> names;
+        for (int i = 0; i < 20000; ++i) names.push_back("/p/" + std::to_string(i));
+        auto resolve = [&](uint32_t i) -> const std::string& { return names[i]; };
+        for (uint32_t i = 0; i < names.size(); ++i) me::setPathRecord(paths, names[i], i, resolve);
+        paths.emplace(me::PathHash{}("/direct"), 0);
+        bool found = paths.size() == names.size() + 1;
+        for (uint32_t i = 0; found && i < names.size(); ++i)
+            found = me::findPathRecord(paths, names[i], resolve)->second == i;
+        check(found && paths.count(me::PathHash{}("/direct")) >= 1,
+              "CompactPath: 32-bit hash keys resolve every inserted path");
+    }
+
+    {
+        const std::string file = "/tmp/test_memopt_columns_" + std::to_string(getpid()) + ".v6";
+        SearchEngine engine;
+        const uint64_t bigSize = 5ull << 30;
+        for (int i = 0; i < 400; ++i) {
+            FileRecord rec;
+            rec.name = "col" + std::to_string(i) + ".bin";
+            rec.path = "/columns";
+            rec.type = 1;
+            rec.size = i == 7 ? bigSize : uint64_t(i);
+            rec.modTime = i == 8 ? time_t(-86400) : i == 9 ? time_t(int64_t(UINT32_MAX) + 5) : time_t(1700000000 + i);
+            rec.inode = i + 1;
+            rec.devId = i < 300 ? i * 31 : 5;
+            engine.addRecord(std::move(rec));
+        }
+        IndexMetadata meta;
+        check(FlatIndexWriter(file).fullRewrite(engine, meta), "Columns: v6 save succeeds");
+        SearchEngine loaded;
+        check(FlatIndexWriter(file).load(loaded, &meta), "Columns: v6 reload succeeds");
+        loaded.completePhase2();
+        bool exact = loaded.recordCount() == 400;
+        for (uint32_t i = 0; exact && i < 400; ++i) {
+            const auto a = engine.getRecord(i), b = loaded.getRecord(i);
+            exact = a.size == b.size && a.modTime == b.modTime && a.devId == b.devId && a.name == b.name;
+        }
+        check(exact, "Columns: v6 round trip keeps oversized sizes, negative times and many devices");
+        const auto big = loaded.query("size:>4gb", 0);
+        check(big.size() == 1 && loaded.getRecord(big[0]).size == bigSize,
+              "Columns: size filter reads oversized values from the side map");
+        std::remove(file.c_str());
+    }
+
+    {
         DirectoryPool tree;
         const std::vector<std::string> paths{"", "/", "/a", "/a/b", "/a/b/", "a/b", "//a///b", "/中文/大写A", "/a", std::string(65535, 'x')};
         for (const auto& path : paths) tree.append(path);

@@ -1,0 +1,16 @@
+after load                   footprint=   865.0 in_use=   628.3 allocated=   668.1 MiB
+after phase2                 footprint=  1267.0 in_use=   860.5 allocated=   942.1 MiB
+after pressure relief        footprint=  1267.0 in_use=   860.5 allocated=   942.1 MiB
+records=6460706 dirs=707177 trigrams=89562 exts=17022
+cap: soa=203.3 (sizes=49.3 mtime=49.3 inode=49.3 dev=24.6 pidx=24.6 type=6.2)
+cap: pathIdxToRecords=40.5 (nonempty=707144) ext=17.8 pathIndex_entries=6381948 pathLookup=707177 lowerLookup=707177
+drop pathIndex_             -> in_use -130.4 MiB
+drop pathLookup+lower       -> in_use -28.9 MiB
+drop pathIdxToRecords_      -> in_use -46.7 MiB
+drop extensionIndex_        -> in_use -19.7 MiB
+drop nameTrigramIndex_      -> in_use -163.8 MiB
+drop names_                 -> in_use -218.9 MiB
+drop pathPool_              -> in_use -46.7 MiB
+drop soa                    -> in_use -203.4 MiB
+all dropped                  footprint=   526.0 in_use=     2.1 allocated=   464.0 MiB
+size>4G=75 devs=9 mtime[min=0 max=1792577860 neg=0] sameDirAsPrev=5671019 pathIdxRuns=758781 dirs=707177

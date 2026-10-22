@@ -1,0 +1,3 @@
+env=(unset) allocated=722 afterFree=722
+env=0 allocated=722 afterFree=1
+env=0 allocated=722 afterFree=1
