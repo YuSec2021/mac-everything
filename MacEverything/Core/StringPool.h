@@ -1,4 +1,5 @@
 #pragma once
+#include "VectorGrowth.h"
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -6,6 +7,8 @@
 #include <vector>
 #include <unordered_map>
 #include <algorithm>
+#include <memory>
+#include <utility>
 
 /// Contiguous memory pool for strings.
 /// All strings are stored end-to-end in a single char buffer.
@@ -19,15 +22,33 @@ public:
     };
 
     StringPool() = default;
-    StringPool(StringPool&&) = default;
-    StringPool& operator=(StringPool&&) = default;
+    StringPool(StringPool&& other) noexcept { *this = std::move(other); }
+    StringPool& operator=(StringPool&& other) noexcept {
+        if (this == &other) return *this;
+        buffer_ = std::move(other.buffer_);
+        entries_ = std::move(other.entries_);
+        backing_ = std::move(other.backing_);
+        external_ = std::exchange(other.external_, nullptr);
+        externalSize_ = std::exchange(other.externalSize_, 0);
+        return *this;
+    }
     StringPool(const StringPool&) = default;
     StringPool& operator=(const StringPool&) = default;
 
     /// Append a string to the pool. Returns the entry index.
     uint32_t append(const char* data, uint16_t len) {
+        std::string saved;
+        const auto source = reinterpret_cast<uintptr_t>(data);
+        const auto begin = reinterpret_cast<uintptr_t>(rawBuffer());
+        if (source >= begin && source - begin < rawSize()) {
+            saved.assign(data, len);
+            data = saved.data();
+        }
+        ownBuffer();
         uint32_t idx = static_cast<uint32_t>(entries_.size());
         uint32_t off = static_cast<uint32_t>(buffer_.size());
+        me::reserveForAppend(buffer_, len);
+        me::reserveForAppend(entries_);
         buffer_.insert(buffer_.end(), data, data + len);
         entries_.push_back({off, len});
         return idx;
@@ -58,7 +79,7 @@ public:
 
     /// Pointer to the string data for entry idx.
     const char* data(uint32_t idx) const {
-        return buffer_.data() + entries_[idx].offset;
+        return rawBuffer() + entries_[idx].offset;
     }
 
     /// Length of entry idx (0 if tombstoned).
@@ -73,19 +94,19 @@ public:
 
     /// Get a string_view for entry idx.
     std::string_view view(uint32_t idx) const {
-        return {buffer_.data() + entries_[idx].offset, entries_[idx].length};
+        return {data(idx), entries_[idx].length};
     }
 
     /// Get a std::string copy for entry idx.
     std::string str(uint32_t idx) const {
-        return std::string(buffer_.data() + entries_[idx].offset, entries_[idx].length);
+        return std::string(view(idx));
     }
 
     /// Raw contiguous buffer pointer. All strings are packed here.
-    const char* rawBuffer() const { return buffer_.data(); }
+    const char* rawBuffer() const { return external_ ? external_ : (buffer_.empty() ? "" : buffer_.data()); }
 
     /// Total size of the raw buffer in bytes.
-    size_t rawSize() const { return buffer_.size(); }
+    size_t rawSize() const { return external_ ? externalSize_ : buffer_.size(); }
 
     /// Pointer to entries array.
     const Entry* entries() const { return entries_.data(); }
@@ -95,6 +116,7 @@ public:
 
     /// Pre-allocate buffer and entry storage.
     void reserve(size_t totalBytes, size_t entryCount) {
+        ownBuffer();
         buffer_.reserve(totalBytes);
         entries_.reserve(entryCount);
     }
@@ -115,14 +137,26 @@ public:
     /// Used by v5 persistence to restore a StringPool from on-disk buffer+entries.
     void loadRaw(const char* buffer, size_t bufferSize,
                  const Entry* entries, uint32_t entryCount) {
-        buffer_.assign(buffer, buffer + bufferSize);
-        entries_.assign(entries, entries + entryCount);
+        std::vector<char> bytes(buffer, buffer + bufferSize);
+        std::vector<Entry> offsets(entries, entries + entryCount);
+        loadRaw(std::move(bytes), std::move(offsets));
     }
 
     /// Move-based bulk load (zero-copy from pre-read vectors).
     /// Used by v6 persistence for direct I/O without intermediate copies.
     void loadRaw(std::vector<char>&& buffer, std::vector<Entry>&& entries) {
+        clear();
         buffer_ = std::move(buffer);
+        entries_ = std::move(entries);
+    }
+
+    // The validated v6 input stays file-backed only while converting to compact pools.
+    void loadMappedRaw(const char* buffer, size_t size, std::vector<Entry>&& entries,
+                       std::shared_ptr<void> backing) {
+        clear();
+        external_ = buffer;
+        externalSize_ = size;
+        backing_ = std::move(backing);
         entries_ = std::move(entries);
     }
 
@@ -130,6 +164,9 @@ public:
     void clear() {
         buffer_.clear();
         entries_.clear();
+        external_ = nullptr;
+        externalSize_ = 0;
+        backing_.reset();
     }
 
     /// Create a compacted copy containing only live entries matching liveMask.
@@ -140,6 +177,16 @@ public:
 private:
     std::vector<char> buffer_;
     std::vector<Entry> entries_;
+    const char* external_ = nullptr;
+    size_t externalSize_ = 0;
+    std::shared_ptr<void> backing_;
+    void ownBuffer() {
+        if (!external_) return;
+        buffer_.assign(external_, external_ + externalSize_);
+        external_ = nullptr;
+        externalSize_ = 0;
+        backing_.reset();
+    }
 };
 
 /// Result of compaction — defined outside class so StringPool is complete.
@@ -162,7 +209,7 @@ inline StringPool::CompactResult StringPool::compact(const std::vector<bool>& li
     for (uint32_t i = 0; i < entries_.size(); i++) {
         if (i < liveMask.size() && liveMask[i] && entries_[i].length > 0) {
             uint32_t newIdx = result.compacted.append(
-                buffer_.data() + entries_[i].offset, entries_[i].length);
+                data(i), entries_[i].length);
             result.remap[i] = newIdx;
         }
     }

@@ -42,6 +42,14 @@ NS_ASSUME_NONNULL_BEGIN
                caseSensitive:(BOOL)caseSensitive;
 @end
 
+/// Retains compact record IDs; materializes only the requested page.
+@interface MEQuerySnapshot : NSObject
+@property (nonatomic, readonly) NSInteger count;
+/// nil means compaction invalidated the IDs; issue a fresh query.
+- (nullable NSArray<MEFileResult *> *)resultsAtOffset:(NSInteger)offset count:(NSInteger)count
+    NS_SWIFT_NAME(results(atOffset:count:));
+@end
+
 /// Bridge between the C++ search engine and Swift/SwiftUI.
 @interface MacSearchBridge : NSObject
 
@@ -79,6 +87,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Perform query with session-scoped cancellation.
 - (NSArray<MEFileResult *> *)queryResults:(NSString *)keyword
+                               maxResults:(uint32_t)maxResults
+                                sessionId:(uint64_t)sessionId;
+
+/// Returns a lightweight result snapshot, without copying every matching path to Swift.
+- (nullable MEQuerySnapshot *)querySnapshot:(NSString *)keyword
                                maxResults:(uint32_t)maxResults
                                 sessionId:(uint64_t)sessionId;
 

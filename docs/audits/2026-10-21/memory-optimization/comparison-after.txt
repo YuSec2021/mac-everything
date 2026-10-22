@@ -1,0 +1,12 @@
+phase1 footprint_mib=1175.35 rss_mib=1180.91
+ready footprint_mib=2347.94 rss_mib=2789.16
+records=6424604 live=6377185 startup_seconds=6.17754
+query=readme mean_ms=0.68525 count=100
+query=*.swift mean_ms=0.17757 count=100
+query=config mean_ms=1.3004 count=100
+query=/Applications/ mean_ms=4.24199 count=13
+query=size:>1mb mean_ms=1.81232 count=100
+query=type:folder mean_ms=5.39575 count=100
+after_queries footprint_mib=2372.72 rss_mib=2814.44
+after_100_changes footprint_mib=2713.14 rss_mib=3154.69
+after_allocator_relief footprint_mib=2713.14 rss_mib=3154.69

@@ -73,6 +73,7 @@ private:
     AdminCallbacks adminCallbacks_;
     std::atomic<bool> running_{false};
     int serverFd_{-1};
+    int wakePipe_[2]{-1, -1};
     uint16_t port_{0};
     std::thread acceptThread_;
 };

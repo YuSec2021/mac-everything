@@ -10,6 +10,192 @@ static void runMemoryOptimizationTests() {
     std::cout << "  Part 21: Memory Optimization Tests\n";
     std::cout << "========================================\n\n";
 
+    {
+        std::vector<uint64_t> values(4096, 42);
+        const size_t previous = values.capacity();
+        me::reserveForAppend(values);
+        values.push_back(99);
+        check(values.front() == 42 && values.back() == 99 && values.size() == 4097,
+              "Growth: appending preserves loaded array contents");
+        check(values.capacity() >= values.size() && values.capacity() <= previous + previous / 4,
+              "Growth: a loaded array does not double after one file event");
+        StringPool pool;
+        pool.loadBulk(std::vector<std::string>(4096, "original"));
+        for (int i = 0; i < 1000; ++i) pool.append("appended");
+        check(pool.view(0) == "original" && pool.view(5095) == "appended",
+              "Growth: string and entry buffers remain aligned through repeated growth");
+    }
+
+    {
+        DirectoryPool tree;
+        const std::vector<std::string> paths{"", "/", "/a", "/a/b", "/a/b/", "a/b", "//a///b", "/中文/大写A", "/a", std::string(65535, 'x')};
+        for (const auto& path : paths) tree.append(path);
+        bool same = true;
+        for (uint32_t i = 0; i < paths.size(); ++i) same &= tree.str(i) == paths[i] && tree.length(i) == paths[i].size();
+        check(same, "Directory tree: exact root, relative, repeated slash, Unicode and maximum-length roundtrip");
+        auto copy = tree;
+        tree.append("/new/directory");
+        check(copy.entryCount() == paths.size() && copy.str(3) == "/a/b", "Directory tree: copied snapshot is independent");
+        auto flat = copy.flatSnapshot();
+        DirectoryPool restored(flat);
+        check(restored.str(6) == paths[6] && !restored.isLive(0), "Directory tree: legacy flat entries preserve IDs and tombstones");
+        DirectoryPool::Cursor cursor(tree);
+        const auto first = std::string(cursor.data(3), tree.length(3));
+        check(first == "/a/b" && std::string(cursor.data(4), tree.length(4)) == "/a/b/", "Directory tree: query cursor reconstructs changing parent IDs");
+        DirectoryPool shared;
+        for (int i = 0; i < 2000; ++i) shared.append("/a/very/long/shared/directory/prefix/" + std::to_string(i));
+        check(shared.storageBytes() < 2000 * 42, "Directory tree: shared prefixes are not stored for every path");
+    }
+
+    {
+        FoldedNamePool names;
+        names.append("readme.txt", "readme.txt");
+        names.append("ReadMe.TXT", "readme.txt");
+        names.append("中文.txt", "中文.txt");
+        names.append("İ", "i̇");
+        check(names.original().data(0) == names.lower().data(0) && names.original().data(2) == names.lower().data(2),
+              "Folded names: identical ASCII and Unicode names share bytes");
+        check(names.original().view(1) == "ReadMe.TXT" && names.lower().view(1) == "readme.txt" && names.lower().length(3) == 3,
+              "Folded names: changed case and Unicode byte lengths remain independent");
+        auto copy = names;
+        names.tombstone(1);
+        for (int i = 0; i < 1000; ++i) names.append("extra", "extra");
+        check(copy.original().view(1) == "ReadMe.TXT" && !names.lower().isLive(1), "Folded names: copied snapshots survive deletion and growth");
+        FoldedNamePool restored;
+        restored.load(copy.original().flatSnapshot(), copy.lower().flatSnapshot());
+        check(restored.original().view(3) == "İ" && restored.lower().view(3) == "i̇", "Folded names: both views survive legacy flat roundtrip");
+    }
+
+    {
+        auto backing = std::make_shared<std::string>("original");
+        StringPool mapped;
+        std::vector<StringPool::Entry> entries{{0, 8}};
+        mapped.loadMappedRaw(backing->data(), backing->size(), std::move(entries), backing);
+        auto copy = mapped;
+        backing.reset();
+        mapped.append(mapped.view(0));
+        check(mapped.str(1) == "original" && copy.str(0) == "original", "Mapped input: self-append detaches safely while copied owner remains live");
+        StringPool moved = std::move(copy);
+        copy.append("reuse");
+        check(moved.str(0) == "original" && copy.str(0) == "reuse", "Mapped input: move preserves backing and leaves reusable source");
+        DirectoryPool tree;
+        std::vector<std::string> paths{"/Users/UPPER/中文/İ", "/ΟΣ/Σ", std::string("/Ä/") + char(255), std::string("/A/\0B", 6)};
+        bool same = true;
+        for (const auto& path : paths) {
+            auto id = tree.append(path);
+            same &= tree.lower().str(id) == me::toLower(path);
+            same &= tree.lower().length(id) == me::toLower(path).size();
+        }
+        check(same, "Directory lowercase: whole-path Unicode and invalid UTF-8 semantics are preserved");
+    }
+
+    // Force every path into one hash bucket to exercise collision handling.
+    {
+        me::CompactPathIndex paths;
+        std::vector<std::string> names{"/one/a.txt", "/two/b.txt", "/one/a.txt"};
+        auto resolve = [&](uint32_t i) -> const std::string& { return names[i]; };
+        auto sameHash = [](std::string_view) -> size_t { return 1; };
+        me::setPathRecord(paths, names[0], 0, resolve, sameHash);
+        me::setPathRecord(paths, names[1], 1, resolve, sameHash);
+        check(paths.size() == 2, "CompactPath: hash collision preserves distinct files");
+        check(me::findPathRecord(paths, names[0], resolve, sameHash)->second == 0,
+              "CompactPath: resolves first colliding path");
+        check(me::findPathRecord(paths, names[1], resolve, sameHash)->second == 1,
+              "CompactPath: resolves second colliding path");
+        check(me::findPathRecord(paths, "/missing", resolve, sameHash) == paths.end(),
+              "CompactPath: hash match cannot identify a missing file");
+        me::setPathRecord(paths, names[2], 2, resolve, sameHash);
+        check(paths.size() == 2 && me::findPathRecord(paths, names[0], resolve, sameHash)->second == 2,
+              "CompactPath: duplicate path replaces only its own record");
+        auto snapshot = paths;
+        paths.erase(me::findPathRecord(paths, names[0], resolve, sameHash));
+        check(paths.size() == 1 && me::findPathRecord(paths, names[1], resolve, sameHash)->second == 1,
+              "CompactPath: deleting one collision preserves the other");
+        const auto& saved = snapshot;
+        check(me::findPathRecord(saved, names[0], resolve, sameHash)->second == 2,
+              "CompactPath: copied const snapshot remains independently queryable");
+    }
+
+    // Packed postings must behave like sorted 32-bit IDs, including promotion.
+    {
+        me::PackedPostingList packed;
+        std::vector<uint32_t> expected;
+        const uint32_t values[] = {0, 1, 255, 256, 65535, 65536, 0xffffff};
+        for (uint32_t v : values) { packed.push_back(v); expected.push_back(v); }
+        packed.shrink_to_fit();
+        check(packed.storageBytes() < expected.size() * sizeof(uint32_t), "Packed IDs: varint deltas retain full ID range in compact storage");
+        packed.insert(std::lower_bound(packed.begin(), packed.end(), 1000), 1000);
+        expected.insert(std::lower_bound(expected.begin(), expected.end(), 1000), 1000);
+        auto copied = packed;
+        packed.push_back(0x1000000);
+        packed.push_back(UINT32_MAX);
+        expected.push_back(0x1000000);
+        expected.push_back(UINT32_MAX);
+        check(std::equal(packed.begin(), packed.end(), expected.begin(), expected.end()),
+              "Packed IDs: promotion preserves all 24-bit and 32-bit boundaries");
+        packed.erase(std::lower_bound(packed.begin(), packed.end(), 256));
+        expected.erase(std::lower_bound(expected.begin(), expected.end(), 256));
+        check(std::equal(packed.begin(), packed.end(), expected.begin(), expected.end()),
+              "Packed IDs: sorted insert and erase preserve values");
+        check(copied.size() == 8 && copied[7] == 0xffffff, "Packed IDs: copied list owns independent storage");
+        me::PackedPostingList empty;
+        check(empty.empty() && empty.begin() == empty.end(), "Packed IDs: empty iterator range");
+        for (uint32_t v = 0; v < 2000; ++v) empty.push_back(v * 10);
+        bool equal = true;
+        for (uint32_t v = 0; v < 2000; ++v) equal &= empty[v] == v * 10;
+        check(equal, "Packed IDs: repeated growth preserves posting order");
+    }
+    {
+        me::PackedPostingList packed;
+        std::vector<uint32_t> reference;
+        uint32_t seed = 7;
+        auto random = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed; };
+        for (uint32_t i = 0; i < 4096; ++i) { packed.push_back(i * 1000); reference.push_back(i * 1000); }
+        bool same = true;
+        for (unsigned op = 0; op < 4000; ++op) {
+            if (!reference.empty() && random() % 3 == 0) {
+                size_t rank = random() % reference.size();
+                packed.erase(packed.begin() + rank);
+                reference.erase(reference.begin() + rank);
+            } else {
+                uint32_t value = op % 7 ? random() : 0;
+                auto p = std::lower_bound(packed.begin(), packed.end(), value);
+                auto r = std::lower_bound(reference.begin(), reference.end(), value);
+                same &= p - packed.begin() == r - reference.begin();
+                packed.insert(p, value); reference.insert(r, value);
+            }
+            same &= std::equal(packed.begin(), packed.end(), reference.begin(), reference.end());
+            size_t rank = random() % reference.size();
+            same &= packed[rank] == reference[rank];
+        }
+        check(same, "Delta IDs: randomized insert, erase, seek and sequential iteration agree with vector");
+        while (!reference.empty()) { packed.erase(packed.begin()); reference.erase(reference.begin()); }
+        packed.push_back(UINT32_MAX);
+        check(packed.size() == 1 && packed[0] == UINT32_MAX, "Delta IDs: erasing checkpoints to empty permits full-range reuse");
+        me::PackedPostingList dense;
+        for (uint32_t i = 0; i < 10000; ++i) dense.push_back(i);
+        dense.shrink_to_fit();
+        check(dense.storageBytes() < dense.size() * 2, "Delta IDs: dense postings including checkpoints use less than two bytes per ID");
+    }
+    {
+        SearchEngine engine;
+        engine.loadRecords({{"first.txt", "/page", 1, 1, 1}, {"second.txt", "/page", 1, 2, 2}});
+        const auto generation = engine.compactionGeneration();
+        auto ids = engine.query(".txt");
+        engine.removeByPath("/page/first.txt");
+        size_t seen = 0;
+        check(engine.forEachRecordWithPath(ids, [&](auto, const auto&, const auto&) { ++seen; }, generation)
+                  && seen == 1, "Result pages: tombstones are skipped without shifting record IDs");
+        engine.compactRecords();
+        seen = 0;
+        check(!engine.forEachRecordWithPath(ids, [&](auto, const auto&, const auto&) { ++seen; }, generation)
+                  && seen == 0, "Result pages: stale IDs rejected under lock after compaction");
+        const auto reloadedGeneration = engine.compactionGeneration();
+        engine.loadRecords({{"replacement.txt", "/other", 1, 1, 1}});
+        check(!engine.forEachRecordWithPath(ids, [](auto, const auto&, const auto&) {}, reloadedGeneration),
+              "Result pages: reload also invalidates outstanding IDs");
+    }
+
     // -- Test 1: Path deduplication in loadRecords --
     std::cout << "  --- Path deduplication in loadRecords ---\n";
     {

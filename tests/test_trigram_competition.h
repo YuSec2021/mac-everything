@@ -7,7 +7,7 @@
 
 // ── Part 69: Trigram Competition Tests ──
 // Verifies that GLOB patterns can participate in trigram pre-filtering
-// and that name vs path trigram selection picks the better anchor.
+// and that selective name candidates avoid the directory-scan fallback.
 
 /// Helper: add N dummy records with distinct names to inflate totalSize so that
 /// the trigram threshold (totalSize/10) permits pre-filtering.
@@ -72,7 +72,7 @@ static void runTrigramCompetitionTests() {
               + " total=" + std::to_string(timing.totalRecords) + ")");
     }
 
-    // ── 68.3 Path trigram competition: path with fewer candidates wins ──
+    // ── 68.3 Directory scan narrows unselective name matches ──
     // Uses "/raresegment/common" syntax which triggers transformSlashTerms → __pathseg
     {
         SearchEngine engine;
@@ -85,12 +85,12 @@ static void runTrigramCompetitionTests() {
             r.type = 1;
             records.push_back(std::move(r));
         }
-        // Only 2 records under /raresegment — path trigram for "raresegment" is very selective
+        // Only 2 records under /raresegment match the directory constraint
         FileRecord r1; r1.name = "common_file_special.txt"; r1.path = "/raresegment"; r1.type = 1;
         FileRecord r2; r2.name = "common_file_other.txt"; r2.path = "/raresegment"; r2.type = 1;
         records.push_back(std::move(r1));
         records.push_back(std::move(r2));
-        // Add noise to make path trigram ratio work
+        // Add noise to keep the directory candidate set selective
         addDummyRecords(records, 100, "unrelated", "/otherpath");
         engine.loadRecords(std::move(records));
 
@@ -98,9 +98,9 @@ static void runTrigramCompetitionTests() {
         // "/raresegment/common" → __pathseg(raresegment) + TERM(common)
         auto results = engine.query("/raresegment/common", 100, true, timing);
         check(results.size() == 2, "69.3 path competition: 2 results");
-        // With competition, path trigram (2 records) should beat name trigram (102 records)
-        check(timing.searchPath == "advanced-path-trigram",
-              "69.3 path-trigram wins competition (got: " + timing.searchPath + ")");
+        // The unselective name index falls back to the directory mapping (2 records)
+        check(timing.searchPath == "advanced-path-scan",
+              "69.3 directory scan narrows unselective name candidates (got: " + timing.searchPath + ")");
     }
 
     // ── 68.4 Pure name query unaffected: "main" still uses advanced-trigram ──
@@ -223,7 +223,7 @@ static void runTrigramCompetitionTests() {
               "69.9 *.py uses trigram with relaxed threshold (got: " + timing.searchPath + ")");
     }
 
-    // ── 69.10 Path trigram early-exit: skip expansion when name trigram is better ──
+    // ── 69.10 Selective name trigram skips the directory scan ──
     // Simulates /Library/Application: "library" matches many paths (high path index count),
     // but "application" matches few names. Name trigram should win without path expansion.
     {
@@ -234,7 +234,7 @@ static void runTrigramCompetitionTests() {
         FileRecord r2; r2.name = "Application Scripts"; r2.path = "/Library"; r2.type = 2;
         records.push_back(std::move(r1));
         records.push_back(std::move(r2));
-        // 50 records under /Library with different names (inflate path trigram for "library")
+        // 50 records under /Library with different names
         for (int i = 0; i < 50; i++) {
             FileRecord r;
             r.name = "libfile_" + std::to_string(i) + ".dylib";
@@ -249,12 +249,12 @@ static void runTrigramCompetitionTests() {
         QueryTimingInfo timing;
         auto results = engine.query("/Library/Application", 100, true, timing);
         check(results.size() == 2, "69.10 /Library/Application finds 2 results");
-        // Name trigram for "application" (2 candidates) should beat path trigram for "library" (52+)
+        // Name trigram for "application" (2 candidates) avoids scanning directories
         check(timing.searchPath == "advanced-trigram",
               "69.10 name trigram wins, skips path expansion (got: " + timing.searchPath + ")");
     }
 
-    // ── 69.11 Path trigram still wins when it has fewer path indices than name candidates ──
+    // ── 69.11 Directory scan handles unselective name candidates ──
     {
         SearchEngine engine;
         std::vector<FileRecord> records;
@@ -266,7 +266,7 @@ static void runTrigramCompetitionTests() {
             r.type = 1;
             records.push_back(std::move(r));
         }
-        // Only 2 records under /raresegment — path trigram has very few path indices
+        // Only 2 records under /raresegment match the directory constraint
         FileRecord r1; r1.name = "common_special.txt"; r1.path = "/raresegment"; r1.type = 1;
         FileRecord r2; r2.name = "common_other.txt"; r2.path = "/raresegment"; r2.type = 1;
         records.push_back(std::move(r1));
@@ -277,12 +277,12 @@ static void runTrigramCompetitionTests() {
         QueryTimingInfo timing;
         auto results = engine.query("/raresegment/common", 100, true, timing);
         check(results.size() == 2, "69.11 /raresegment/common finds 2 results");
-        // Path trigram for "raresegment" has ~1 path index → 2 records, beats name trigram (82)
-        check(timing.searchPath == "advanced-path-trigram",
-              "69.11 path trigram wins when fewer indices (got: " + timing.searchPath + ")");
+        // The directory mapping yields 2 records after the name index is rejected
+        check(timing.searchPath == "advanced-path-scan",
+              "69.11 directory scan narrows unselective name candidates (got: " + timing.searchPath + ")");
     }
 
-    // ── 69.12 Timing is captured for path trigram stage ──
+    // ── 69.12 Timing is captured for directory candidate filtering ──
     {
         SearchEngine engine;
         std::vector<FileRecord> records;
@@ -295,6 +295,46 @@ static void runTrigramCompetitionTests() {
         auto results = engine.query("app", 100, true, timing);
         // trigramUs should be > 0 (timing was captured)
         check(timing.trigramMs >= 0, "69.12 trigram timing is captured (trigramMs=" + std::to_string(timing.trigramMs) + ")");
+    }
+
+    // A slash constraint belongs to the parent directory, never the result name.
+    {
+        SearchEngine engine;
+        std::vector<FileRecord> records = {
+            {"RareSegment", "/outside", 2, 0, 1},
+            {"RareSegment.txt", "/outside", 1, 1, 1},
+            {"a.txt", "/root/RareSegment", 1, 1, 1},
+            {"a.txt", "/else/RareSegment", 1, 1, 1},
+            {"readme.txt", "/root/RareSegment", 1, 1, 1},
+            {"a.txt", "/root/other", 1, 1, 1},
+            {"a.txt", "/root/RareSegment/deep", 1, 1, 1}
+        };
+        addDummyRecords(records, 1000, "filler", "/noise");
+        engine.loadRecords(std::move(records));
+        QueryTimingInfo timing;
+        const auto ids = engine.query("RareSegment/a", 0, true, timing);
+        check(ids.size() == 4, "Directory scan: parent constraints exclude filename-only matches");
+        check(timing.searchPath == "advanced-path-scan" && !timing.usedTrigram,
+              "Directory scan: short name uses directory mapping without path trigrams");
+        for (const char* query : {"RareSegment/a", "root/RareSegment/a", "root//a", "RareSegment/a | readme",
+                                  "!RareSegment/a", "RareSegment/a ext:txt", "RareSegment/a !deep/a",
+                                  "RareSegment/a other/a", "missing-path/a", "RareSegment/readme"}) {
+            for (uint32_t limit : {0u, 1u, 3u}) {
+                check(engine.query(query, limit, true) == engine.query(query, limit, false),
+                      std::string("Directory scan: same ordered results as full scan: ") + query);
+            }
+        }
+        engine.addRecord({"a-new.txt", "/new/RareSegment", 1, 1, 1});
+        check(engine.query("RareSegment/a").size() == 5, "Directory scan: new directory maps records after mutation");
+        engine.removeByPath("/root/RareSegment/a.txt");
+        engine.updateByPath("/new/RareSegment/a-new.txt", {"a-new.txt", "/moved", 1, 1, 1});
+        check(engine.query("RareSegment/a").size() == 3, "Directory scan: delete and move update directory mapping");
+        engine.compactRecords();
+        check(engine.query("RareSegment/a") == engine.query("RareSegment/a", 0, false),
+              "Directory scan: compaction preserves complete ordered results");
+        engine.batchRescanPrefix("/root/RareSegment", {{"a-replacement.txt", "/root/RareSegment", 1, 1, 1}});
+        check(engine.query("RareSegment/a") == engine.query("RareSegment/a", 0, false),
+              "Directory scan: subtree rescan preserves complete ordered results");
     }
 
     std::cout << "  Part 69 summary: " << localPassed << " passed, " << localFailed << " failed\n";

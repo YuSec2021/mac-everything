@@ -1,0 +1,11 @@
+ready_mib=1573.38 records=6460706 live=6381948
+name_postings count=89562 id_count=107565233 capacity_mib=307.747
+extension_postings count=17022 id_count=18260612 capacity_mib=17.4147
+digest=16767565519846118833 query=readme mean_ms=0.883092 count=100
+digest=13368271873974795171 query=*.swift mean_ms=0.250537 count=100
+digest=9126510032369394709 query=config mean_ms=2.0643 count=100
+digest=7828677548413290442 query=/Applications/ mean_ms=5.84747 count=13
+digest=1204413989871487988 query=size:>1mb mean_ms=2.44724 count=100
+digest=3869259126006479581 query=type:folder mean_ms=7.79192 count=100
+write_ok=1 write_seconds=0.145139 before_write_mib=1605.72 peak_mib=2078.17 after_write_mib=2078.14 max_concurrent_query_ms=1.05583 queries=21 mutations=100 max_mutation_ms=177.155
+reload_live=6381948

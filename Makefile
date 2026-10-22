@@ -3,8 +3,8 @@ CXXFLAGS = -std=c++20 -O2 -Wall -Wextra
 FRAMEWORKS = -framework CoreServices
 CORE_SRCS = $(wildcard MacEverything/Core/*.cpp)
 RE2_PREFIX = /opt/homebrew/opt/re2
-RE2_CFLAGS = -I$(RE2_PREFIX)/include
-RE2_LDFLAGS = -L$(RE2_PREFIX)/lib -lre2
+RE2_CFLAGS = -I$(RE2_PREFIX)/include -I/opt/homebrew/include
+RE2_LDFLAGS = -L$(RE2_PREFIX)/lib -L/opt/homebrew/opt/abseil/lib -lre2 -labsl_raw_logging_internal -labsl_throw_delegate
 
 # === Build targets ===
 .PHONY: test test-fast test-slow test-all test-asan test-tsan build clean app dmg daemon help
@@ -22,10 +22,19 @@ daemon: maceverything-daemon
 
 # === Lint targets ===
 lint-bridge:
-	$(CXX) $(CXXFLAGS) -fsyntax-only -fobjc-arc -x objective-c++ \
+	$(CXX) $(CXXFLAGS) $(RE2_CFLAGS) -fsyntax-only -fobjc-arc -x objective-c++ \
 		-IMacEverything/Core -IMacEverything/Bridge \
 		MacEverything/Bridge/MacSearchBridge.mm \
 		MacEverything/Bridge/MacSearchBridge+Content.mm
+
+# The test injects an in-memory engine without adding a production test hook.
+.PHONY: test-bridge-snapshot
+test-bridge-snapshot:
+	$(CXX) $(CXXFLAGS) -fno-access-control -fobjc-arc $(RE2_CFLAGS) $(FRAMEWORKS) \
+		-framework AppKit -framework Foundation $(RE2_LDFLAGS) -IMacEverything/Core -IMacEverything/Bridge \
+		tests/test_query_snapshot.mm MacEverything/Bridge/MacSearchBridge.mm \
+		MacEverything/Bridge/MacSearchBridge+Content.mm $(CORE_SRCS) -o /tmp/maceverything-query-snapshot-test
+	/tmp/maceverything-query-snapshot-test
 
 # === Sanitizer targets ===
 test-asan: test_all.cpp $(CORE_SRCS)

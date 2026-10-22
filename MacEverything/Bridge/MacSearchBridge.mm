@@ -4,6 +4,34 @@
 #include "Logger.h"
 #include "HighlightHintExtractor.h"
 
+@interface MEQuerySnapshot () {
+@public
+    std::shared_ptr<SearchEngine> _engine;
+    std::vector<uint32_t> _indices;
+    uint64_t _generation;
+}
+@end
+
+@implementation MEQuerySnapshot
+- (NSInteger)count { return _indices.size(); }
+- (nullable NSArray<MEFileResult *> *)resultsAtOffset:(NSInteger)offset count:(NSInteger)count {
+    if (!_engine || offset < 0 || static_cast<size_t>(offset) >= _indices.size() || count <= 0) return @[];
+    const auto length = std::min<size_t>(count, _indices.size() - offset);
+    std::vector<uint32_t> page(_indices.begin() + offset, _indices.begin() + offset + length);
+    NSMutableArray<MEFileResult *> *results = [NSMutableArray arrayWithCapacity:length];
+    const bool valid = _engine->forEachRecordWithPath(page,
+        [&](uint32_t, const FileRecord& r, const std::string& path) {
+            NSString *name = [NSString stringWithUTF8String:r.name.c_str()];
+            NSString *directory = [NSString stringWithUTF8String:path.c_str()];
+            if (name && directory) {
+                [results addObject:[[MEFileResult alloc] initWithName:name path:directory
+                    type:r.type size:r.size modTime:r.modTime]];
+            }
+        }, _generation);
+    return valid ? results : nil;
+}
+@end
+
 @implementation MEFileResult
 
 - (instancetype)initWithName:(NSString *)name
@@ -371,6 +399,25 @@
                                                      modTime:r.modTime]];
     });
     return results;
+}
+
+- (nullable MEQuerySnapshot *)querySnapshot:(NSString *)keyword
+                               maxResults:(uint32_t)maxResults
+                                sessionId:(uint64_t)sessionId {
+    auto engine = _serviceEngine->safeEngine();
+    if (!engine) return nil;
+    const std::string key([keyword UTF8String]);
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const uint64_t generation = engine->compactionGeneration();
+        auto indices = engine->query(key, maxResults, true, sessionId);
+        if (generation != engine->compactionGeneration()) continue;
+        MEQuerySnapshot *snapshot = [[MEQuerySnapshot alloc] init];
+        snapshot->_engine = engine;
+        snapshot->_indices = std::move(indices);
+        snapshot->_generation = generation;
+        return snapshot;
+    }
+    return nil;
 }
 
 - (void)cancelSession:(uint64_t)sessionId {

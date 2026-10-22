@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
 
 FlatIndexWriter::FlatIndexWriter(const std::string& path) : path_(path) {}
 
@@ -19,30 +20,76 @@ bool FlatIndexWriter::exists() const {
 
 bool FlatIndexWriter::writeStringPoolSection(FILE* f, const StringPool& pool,
                                               uint32_t& outSize, uint32_t& outCRC) {
-    long startPos = ftell(f);
-
     uint32_t bufSize = static_cast<uint32_t>(pool.rawSize());
-    if (fwrite(&bufSize, sizeof(uint32_t), 1, f) != 1) return false;
-    if (bufSize > 0 && fwrite(pool.rawBuffer(), 1, bufSize, f) != bufSize) return false;
-
     uint32_t entryCount = pool.entryCount();
-    if (fwrite(&entryCount, sizeof(uint32_t), 1, f) != 1) return false;
-    if (entryCount > 0) {
-        size_t entryBytes = entryCount * sizeof(StringPool::Entry);
-        if (fwrite(pool.entries(), 1, entryBytes, f) != entryBytes) return false;
-    }
-
-    long endPos = ftell(f);
-    outSize = static_cast<uint32_t>(endPos - startPos);
-
-    // Compute CRC over what we just wrote
-    std::vector<uint8_t> buf(outSize);
-    fseek(f, startPos, SEEK_SET);
-    if (fread(buf.data(), 1, outSize, f) != outSize) return false;
-    outCRC = IndexWAL::crc32(buf.data(), outSize);
-    fseek(f, endPos, SEEK_SET);
+    outCRC = 0;
+    auto write = [&](const void* data, size_t bytes) {
+        if (bytes && fwrite(data, 1, bytes, f) != bytes) return false;
+        outCRC = IndexWAL::crc32(data, bytes, outCRC);
+        return true;
+    };
+    const size_t entryBytes = size_t(entryCount) * sizeof(StringPool::Entry);
+    if (!write(&bufSize, sizeof(bufSize)) || !write(pool.rawBuffer(), bufSize) ||
+        !write(&entryCount, sizeof(entryCount)) || !write(pool.entries(), entryBytes)) return false;
+    outSize = static_cast<uint32_t>(sizeof(bufSize) + bufSize + sizeof(entryCount) + entryBytes);
 
     return true;
+}
+
+template<class Pool>
+static bool writeFlattenedPool(FILE* f, const Pool& pool, uint32_t& outSize, uint32_t& outCRC) {
+    uint64_t bytes = 0;
+    const uint32_t count = pool.entryCount();
+    for (uint32_t i = 0; i < count; ++i) bytes += pool.length(i);
+    const uint64_t total = 8 + bytes + uint64_t(count) * sizeof(StringPool::Entry);
+    if (total > UINT32_MAX) return false;
+    const auto bufSize = static_cast<uint32_t>(bytes);
+    outCRC = 0;
+    auto write = [&](const void* data, size_t n) {
+        if (n && fwrite(data, 1, n, f) != n) return false;
+        outCRC = IndexWAL::crc32(data, n, outCRC);
+        return true;
+    };
+    if (!write(&bufSize, sizeof(bufSize))) return false;
+    // Preserve the v6 flat format without materializing a second full path pool.
+    std::string chunk, path;
+    for (uint32_t i = 0; i < count; ++i) {
+        pool.reconstruct(i, path);
+        chunk.append(path);
+        if (chunk.size() >= 65536) {
+            if (!write(chunk.data(), chunk.size())) return false;
+            chunk.clear();
+        }
+    }
+    if (!write(chunk.data(), chunk.size()) || !write(&count, sizeof(count))) return false;
+    std::vector<StringPool::Entry> entries;
+    entries.reserve(4096);
+    uint32_t offset = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        StringPool::Entry entry{};
+        entry.offset = offset;
+        entry.length = pool.length(i);
+        offset += entry.length;
+        entries.push_back(entry);
+        if (entries.size() == 4096) {
+            if (!write(entries.data(), entries.size() * sizeof(StringPool::Entry))) return false;
+            entries.clear();
+        }
+    }
+    if (!write(entries.data(), entries.size() * sizeof(StringPool::Entry))) return false;
+    outSize = static_cast<uint32_t>(total);
+    return true;
+}
+
+bool FlatIndexWriter::writeStringPoolSection(FILE* f, const DirectoryPool& pool, uint32_t& size, uint32_t& crc) {
+    return writeFlattenedPool(f, pool, size, crc);
+}
+bool FlatIndexWriter::writeStringPoolSection(FILE* f, FoldedNamePool::View pool, uint32_t& size, uint32_t& crc) {
+    return writeFlattenedPool(f, pool, size, crc);
+}
+
+bool FlatIndexWriter::writeStringPoolSection(FILE* f, DirectoryPool::LowerView pool, uint32_t& size, uint32_t& crc) {
+    return writeFlattenedPool(f, pool, size, crc);
 }
 
 bool FlatIndexWriter::readStringPoolSection(const uint8_t* data, size_t len, StringPool& pool) {
@@ -92,29 +139,22 @@ bool FlatIndexWriter::writeArraySection(FILE* f, const std::vector<T>& vec,
 
 bool FlatIndexWriter::writeMetadataSection(FILE* f, const IndexMetadata& meta,
                                             uint32_t& outSize, uint32_t& outCRC) {
-    long startPos = ftell(f);
-
+    outSize = 0;
+    outCRC = 0;
+    auto write = [&](const void* data, size_t bytes) {
+        if (bytes && fwrite(data, 1, bytes, f) != bytes) return false;
+        outCRC = IndexWAL::crc32(data, bytes, outCRC);
+        outSize += static_cast<uint32_t>(bytes);
+        return true;
+    };
     uint32_t count = static_cast<uint32_t>(meta.extra.size());
-    if (fwrite(&count, sizeof(uint32_t), 1, f) != 1) return false;
-
+    if (!write(&count, sizeof(count))) return false;
     for (const auto& [key, value] : meta.extra) {
         uint32_t kLen = static_cast<uint32_t>(key.size());
-        if (fwrite(&kLen, sizeof(uint32_t), 1, f) != 1) return false;
-        if (kLen > 0 && fwrite(key.data(), 1, kLen, f) != kLen) return false;
-
         uint32_t vLen = static_cast<uint32_t>(value.size());
-        if (fwrite(&vLen, sizeof(uint32_t), 1, f) != 1) return false;
-        if (vLen > 0 && fwrite(value.data(), 1, vLen, f) != vLen) return false;
+        if (!write(&kLen, sizeof(kLen)) || !write(key.data(), kLen) ||
+            !write(&vLen, sizeof(vLen)) || !write(value.data(), vLen)) return false;
     }
-
-    long endPos = ftell(f);
-    outSize = static_cast<uint32_t>(endPos - startPos);
-
-    std::vector<uint8_t> buf(outSize);
-    fseek(f, startPos, SEEK_SET);
-    if (fread(buf.data(), 1, outSize, f) != outSize) return false;
-    outCRC = IndexWAL::crc32(buf.data(), outSize);
-    fseek(f, endPos, SEEK_SET);
 
     return true;
 }
@@ -154,7 +194,7 @@ bool FlatIndexWriter::readMetadataSection(const uint8_t* data, size_t len, Index
 // ---------------------------------------------------------------------------
 
 bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& meta) {
-    auto snap = engine.snapshotForV6();
+    auto snap = engine.readViewForV6();
 
     std::string tmpPath = path_ + ".tmp";
     FILE* f = fopen(tmpPath.c_str(), "w+b");
@@ -279,6 +319,10 @@ bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& met
         fillSection(9, kSectionDevIds, offset, size, crc);
     }
 
+    // No engine data is read after this point; let queued file events proceed.
+    snap.lock.unlock();
+    snap.mutationGate.unlock();
+
     // Section 11: METADATA_KV
     {
         uint64_t offset = static_cast<uint64_t>(ftell(f));
@@ -313,8 +357,12 @@ bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& met
         fclose(f); remove(tmpPath.c_str()); return false;
     }
 
-    fsync(fileno(f));
-    fclose(f);
+    const bool synced = fsync(fileno(f)) == 0;
+    const int closeResult = fclose(f);
+    if (!synced || closeResult != 0) {
+        remove(tmpPath.c_str());
+        return false;
+    }
 
     if (rename(tmpPath.c_str(), path_.c_str()) != 0) {
         remove(tmpPath.c_str());
@@ -365,12 +413,26 @@ bool FlatIndexWriter::load(SearchEngine& engine, IndexMetadata* outMeta) {
         }
     }
 
+    // Reject impossible section tables before allocating buffers from disk lengths.
+    struct stat fileInfo{};
+    if (fstat(fileno(f), &fileInfo) != 0 || header.sectionCount > kSectionCount ||
+        fileInfo.st_size < static_cast<off_t>(kHeaderSize + header.sectionCount * sizeof(SectionEntry))) {
+        fclose(f); return false;
+    }
+
     // Read section table
     fseek(f, kHeaderSize, SEEK_SET);
     std::vector<SectionEntry> sections(header.sectionCount);
     if (fread(sections.data(), sizeof(SectionEntry), header.sectionCount, f)
         != header.sectionCount) {
         fclose(f); return false;
+    }
+
+    for (const auto& section : sections) {
+        if (section.offset > static_cast<uint64_t>(fileInfo.st_size) ||
+            section.byteLength > static_cast<uint64_t>(fileInfo.st_size) - section.offset) {
+            fclose(f); return false;
+        }
     }
 
     // Build section lookup (sectionId -> index in sections array)
@@ -399,46 +461,31 @@ bool FlatIndexWriter::load(SearchEngine& engine, IndexMetadata* outMeta) {
         return true;
     };
 
-    // Helper: read StringPool section directly into buffer+entries vectors, then move
+    // File-backed input avoids allocating four temporary string buffers during conversion.
+    const size_t mappingSize = static_cast<size_t>(fileInfo.st_size);
+    void* mapped = mmap(nullptr, mappingSize, PROT_READ, MAP_PRIVATE, fileno(f), 0);
+    if (mapped == MAP_FAILED) { fclose(f); return false; }
+    const std::shared_ptr<void> mapping(mapped, [mappingSize](void* data) { munmap(data, mappingSize); });
     auto readStringPoolDirect = [&](uint32_t sectionId, StringPool& pool, const char* name) -> bool {
-        if (sectionIdx[sectionId] == 0xFFFFFFFF) {
-            LOG_ERROR("FlatIndexWriter", "Missing section: " << name);
-            return false;
-        }
+        if (sectionIdx[sectionId] == 0xFFFFFFFF) return false;
         const auto& entry = sections[sectionIdx[sectionId]];
-        // Read the entire section into a temp buffer for CRC verification
-        std::vector<uint8_t> raw(entry.byteLength);
-        fseek(f, static_cast<long>(entry.offset), SEEK_SET);
-        if (fread(raw.data(), 1, entry.byteLength, f) != entry.byteLength) {
-            LOG_ERROR("FlatIndexWriter", "Failed to read section " << name);
-            return false;
-        }
-        uint32_t actualCRC = IndexWAL::crc32(raw.data(), raw.size());
-        if (actualCRC != entry.crc32) {
+        if (entry.byteLength < 8) return false;
+        const auto* data = static_cast<const uint8_t*>(mapping.get()) + entry.offset;
+        if (IndexWAL::crc32(data, entry.byteLength) != entry.crc32) {
             LOG_ERROR("FlatIndexWriter", "CRC mismatch for section " << name);
             return false;
         }
-        // Parse: bufSize(4) + buffer(bufSize) + entryCount(4) + entries
-        size_t pos = 0;
-        if (entry.byteLength < 8) return false;
-        uint32_t bufSize;
-        memcpy(&bufSize, raw.data() + pos, sizeof(uint32_t));
-        pos += sizeof(uint32_t);
-        if (pos + bufSize > entry.byteLength) return false;
-        // Move buffer data into a char vector
-        std::vector<char> buffer(bufSize);
-        if (bufSize > 0) memcpy(buffer.data(), raw.data() + pos, bufSize);
-        pos += bufSize;
-        if (pos + sizeof(uint32_t) > entry.byteLength) return false;
-        uint32_t entryCount;
-        memcpy(&entryCount, raw.data() + pos, sizeof(uint32_t));
-        pos += sizeof(uint32_t);
-        size_t entryBytes = entryCount * sizeof(StringPool::Entry);
-        if (pos + entryBytes > entry.byteLength) return false;
-        std::vector<StringPool::Entry> entries(entryCount);
-        if (entryCount > 0) memcpy(entries.data(), raw.data() + pos, entryBytes);
-        // Move into pool (zero-copy handoff)
-        pool.loadRaw(std::move(buffer), std::move(entries));
+        uint32_t bufSize, count;
+        memcpy(&bufSize, data, sizeof(bufSize));
+        if (bufSize > entry.byteLength - 8) return false;
+        memcpy(&count, data + 4 + bufSize, sizeof(count));
+        const size_t entryBytes = size_t(count) * sizeof(StringPool::Entry);
+        if (entryBytes != entry.byteLength - 8 - bufSize) return false;
+        std::vector<StringPool::Entry> entries(count);
+        if (entryBytes) memcpy(entries.data(), data + 8 + bufSize, entryBytes);
+        for (const auto& item : entries)
+            if (item.offset > bufSize || item.length > bufSize - item.offset) return false;
+        pool.loadMappedRaw(reinterpret_cast<const char*>(data + 4), bufSize, std::move(entries), mapping);
         return true;
     };
 
@@ -478,6 +525,9 @@ bool FlatIndexWriter::load(SearchEngine& engine, IndexMetadata* outMeta) {
     if (!readStringPoolDirect(kSectionPathPool, pathPool, "PATH_POOL")) { fclose(f); return false; }
     if (!readStringPoolDirect(kSectionLowerPathPool, lowerPathPool, "LOWER_PATH_POOL")) { fclose(f); return false; }
 
+    if (namePool.entryCount() != origNamePool.entryCount() ||
+        lowerPathPool.entryCount() != pathPool.entryCount()) { fclose(f); return false; }
+
     uint32_t n = origNamePool.entryCount();
 
     // Read array sections directly into target vectors (in-place CRC)
@@ -494,6 +544,10 @@ bool FlatIndexWriter::load(SearchEngine& engine, IndexMetadata* outMeta) {
     if (!readArrayDirect(kSectionModTimes, modTimes, n, "MOD_TIMES")) { fclose(f); return false; }
     if (!readArrayDirect(kSectionInodes, inodes, n, "INODES")) { fclose(f); return false; }
     if (!readArrayDirect(kSectionDevIds, devIds, n, "DEV_IDS")) { fclose(f); return false; }
+
+    for (uint32_t path : pathIndices) {
+        if (path >= pathPool.entryCount()) { fclose(f); return false; }
+    }
 
     // Metadata (optional)
     IndexMetadata meta;

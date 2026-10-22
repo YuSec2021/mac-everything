@@ -5,6 +5,25 @@
 static void runRecentCacheTests() {
     std::cout << "═══ Part 16: Recent Cache Correctness ═══\n\n";
 
+    {
+        SearchEngine engine;
+        std::vector<FileRecord> records;
+        std::vector<uint32_t> expected;
+        for (uint32_t i = 0; i < 1024; ++i) {
+            records.push_back({"heap-" + std::to_string(i), "/recent-heap", 1, 1,
+                               static_cast<time_t>((i * 37) % 113)});
+            expected.push_back(i);
+        }
+        std::sort(expected.begin(), expected.end(), [&](uint32_t a, uint32_t b) {
+            if (records[a].modTime != records[b].modTime) return records[a].modTime > records[b].modTime;
+            return a > b;
+        });
+        expected.resize(200);
+        engine.loadRecords(std::move(records));
+        check(engine.recentIndices(200) == expected,
+              "C16: bounded heap matches full sorting, including timestamp ties");
+    }
+
     // Test 1: addRecord updates cache
     {
         SearchEngine engine;

@@ -421,6 +421,8 @@ void ServiceEngine::startHttpServer(uint16_t port) {
     if (!httpServer_) {
         httpServer_ = std::make_shared<HttpServer>();
     }
+    if (httpServer_->isRunning()) return;
+    httpServer_->setAdminCallbacks(adminCallbacks);
     bool ok = httpServer_->start(port,
         [this]() -> std::shared_ptr<SearchEngine> { return this->safeEngine(); },
         [this]() -> std::shared_ptr<ContentIndex> { return this->safeContentIndex(); });
@@ -428,17 +430,16 @@ void ServiceEngine::startHttpServer(uint16_t port) {
         LOG_ERROR("ServiceEngine", "HTTP server failed to start on port " << port);
         return;
     }
-
-    if (adminCallbacks.onRebuildIndex || adminCallbacks.onRebuildContentIndex) {
-        httpServer_->setAdminCallbacks(adminCallbacks);
-    }
 }
 
 void ServiceEngine::stopHttpServer() {
-    std::unique_lock lock(engineMutex_); // unique_lock: mutates httpServer_
-    if (httpServer_) {
-        httpServer_->stop();
+    std::shared_ptr<HttpServer> server;
+    {
+        std::shared_lock lock(engineMutex_);
+        server = httpServer_;
     }
+    // A request may be waiting for safeEngine(); never join it under engineMutex_.
+    if (server) server->stop();
 }
 
 // ═══════════════════════════════════════════════════════

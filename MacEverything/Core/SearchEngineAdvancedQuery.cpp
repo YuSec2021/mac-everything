@@ -139,14 +139,8 @@ static bool evalFilter(const QueryNode& node,
     // __pathseg: internal filter — structured path segment matching
     if (name == "__pathseg") {
         if (!nameData || !pathData) return true;
-        // Build full path: pathData/nameData for component-level matching
-        size_t fullLen = static_cast<size_t>(pathLen) + 1 + nameLen;
-        if (pathBuf.size() < fullLen) pathBuf.resize(fullLen * 2);
-        memcpy(pathBuf.data(), pathData, pathLen);
-        pathBuf[pathLen] = '/';
-        memcpy(pathBuf.data() + pathLen + 1, nameData, nameLen);
-        std::string_view fullPath(pathBuf.data(), fullLen);
-        return SearchEngine::pathSegmentsMatch(fullPath, node.pathSegments);
+        // Directory constraints must not match the filename component itself.
+        return SearchEngine::pathSegmentsMatch(std::string_view(pathData, pathLen), node.pathSegments);
     }
 
     // ext: — match file extension (requires name data)
@@ -254,7 +248,7 @@ static bool evalFilter(const QueryNode& node,
 
 /// Evaluate a TERM node against a single record.
 /// Returns true if the record's name or full path matches the term text.
-/// nameData is lowercase (from namePool_), origNameData has original case (from origNamePool_).
+/// nameData is lowercase (from names_.lower()), origNameData has original case (from names_.original()).
 /// pathData is lowercase, origPathData has original case (from pathPool_).
 /// Returns false when nameData is nullptr (pure-filter SoA fast path).
 static bool evalTerm(const QueryNode& node,
@@ -529,27 +523,19 @@ static std::string extractScoringTerm(const QueryNode& node) {
     return {};
 }
 
-/// Extract the best (longest, >= 3 chars) path segment text from __pathseg filters in the AST.
-/// Only looks in AND-level nodes (can't pre-filter OR branches).
-static std::string bestPathSegTerm(const QueryNode& node) {
+static bool needsOriginalPath(const QueryNode& node) {
+    if (node.type == QueryNodeType::TERM && node.mode == MatchMode::SUBSTRING && node.caseSensitive && !node.nameOnly) return true;
+    for (const auto& child : node.children) if (needsOriginalPath(*child)) return true;
+    return false;
+}
+
+// Only positive AND-level constraints can safely narrow the whole query.
+static void requiredPathConstraints(const QueryNode& node, std::vector<const QueryNode*>& out) {
     if (node.type == QueryNodeType::FILTER && node.filterName == "__pathseg") {
-        std::string best;
-        for (auto& seg : node.pathSegments) {
-            if (seg.text.size() >= 3 && seg.text.size() > best.size()) {
-                best = seg.text;
-            }
-        }
-        return best;
+        out.push_back(&node);
+    } else if (node.type == QueryNodeType::AND) {
+        for (const auto& child : node.children) requiredPathConstraints(*child, out);
     }
-    if (node.type == QueryNodeType::AND) {
-        std::string best;
-        for (auto& child : node.children) {
-            auto t = bestPathSegTerm(*child);
-            if (t.size() > best.size()) best = t;
-        }
-        return best;
-    }
-    return {};
 }
 
 /// Extract extension filter values from AND-level ext: FILTER nodes in the AST.
@@ -603,6 +589,7 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
 
     // Analyze which record fields the query actually needs
     QueryNeeds needs = analyzeQueryNeeds(*ast);
+    const bool originalPathNeeded = needsOriginalPath(*ast);
 
     // Pre-compile all regex patterns before acquiring lock
     RegexCache regexCache;
@@ -681,37 +668,6 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
         }
     }
 
-    // Stage 3: Path trigram — always attempt (compete with name trigram)
-    std::vector<uint32_t> pathCands;
-    bool pathOk = false;
-    if (useTrigram && !pathTrigramIndex_.empty()) {
-        std::string pathSegKey = bestPathSegTerm(*ast);
-        if (pathSegKey.size() >= 3) {
-            auto pt0 = std::chrono::steady_clock::now();
-            bool allFound = false;
-            auto pathIdxCands = intersectPostingLists(pathTrigramIndex_, pathSegKey, allFound);
-            if (allFound) {
-                // Early-exit: if name trigram already succeeded and path index count
-                // is >= nameCands (each path index expands to >=1 record), expansion
-                // cannot produce fewer candidates — skip the expensive expansion.
-                bool skipExpansion = nameOk && pathIdxCands.size() >= nameCands.size();
-                if (!skipExpansion) {
-                    for (uint32_t pi : pathIdxCands) {
-                        if (genPtr->load(std::memory_order_relaxed) != myGen) return {};
-                        if (pi >= pathIdxToRecords_.size()) continue;
-                        const auto& recIds = pathIdxToRecords_[pi];
-                        pathCands.insert(pathCands.end(), recIds.begin(), recIds.end());
-                    }
-                    std::sort(pathCands.begin(), pathCands.end());
-                    pathCands.erase(std::unique(pathCands.begin(), pathCands.end()), pathCands.end());
-                    pathOk = pathCands.size() <= totalSize / 4;
-                    if (!pathOk) pathCands.clear();
-                }
-            }
-            afterTrigram = std::chrono::steady_clock::now();
-        }
-    }
-
     // Stage 4: Extension index pre-filtering
     std::vector<uint32_t> extCands;
     bool extOk = false;
@@ -730,6 +686,39 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
                 extCands.erase(std::unique(extCands.begin(), extCands.end()), extCands.end());
             }
             extOk = true; // Extension index is precise — empty means no matches
+        }
+    }
+
+    // Without a selective name/extension index, scan directories once instead of
+    // matching the same parent path separately for millions of records.
+    std::vector<uint32_t> pathCands;
+    bool pathOk = false;
+    bool usedPathScan = false;
+    if (useTrigram && !nameOk && !extOk && !phase2Pending_.load(std::memory_order_acquire)
+        && !pathIdxToRecords_.empty()) {
+        std::vector<const QueryNode*> constraints;
+        requiredPathConstraints(*ast, constraints);
+        if (!constraints.empty()) {
+            beforeTrigram = std::chrono::steady_clock::now();
+            pathOk = true;
+            for (uint32_t pi = 0; pi < pathPool_.lower().entryCount(); ++pi) {
+                if (genPtr->load(std::memory_order_relaxed) != myGen) return {};
+                if (!pathPool_.lower().isLive(pi) || pi >= pathIdxToRecords_.size()) continue;
+                bool matches = true;
+                for (const auto* constraint : constraints) {
+                    if (!pathPool_.matchesSegments(pi, constraint->pathSegments)) { matches = false; break; }
+                }
+                if (!matches) continue;
+                const auto& records = pathIdxToRecords_[pi];
+                // Broad paths are cheaper to evaluate directly and need no candidate copy.
+                if (pathCands.size() + records.size() > totalSize / 4) {
+                    pathOk = false;
+                    pathCands.clear();
+                    break;
+                }
+                pathCands.insert(pathCands.end(), records.begin(), records.end());
+            }
+            afterTrigram = std::chrono::steady_clock::now();
         }
     }
 
@@ -752,6 +741,7 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
                 best = &viable[i];
             }
         }
+        usedPathScan = std::string(best->label) == "path";
         candidates = std::move(*best->cands);
         // If the winner is not name trigram, clear trigramKey for label purposes
         if (std::string(best->label) != "name") {
@@ -763,256 +753,128 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
     // Evaluate AST against each candidate (or all records for linear scan)
     // Uses SearchEngine::Match (declared in SearchEngine.h)
     std::vector<Match> merged;
-    std::vector<char> pathBuf;
 
     // Extract scoring term from AST (not raw input) — hoisted out of per-record loop
     std::string scoringTerm = extractScoringTerm(*ast);
 
-    auto beforePhase = std::chrono::steady_clock::now();
-
-    if (useTrigramIndex) {
-        // Trigram-filtered path with parallel dispatch + software prefetch
-        const size_t candidateCount = candidates.size();
-        constexpr size_t PARALLEL_THRESHOLD = 10000;
-        constexpr size_t PREFETCH_DIST = 8;
-
-        if (candidateCount >= PARALLEL_THRESHOLD) {
-            // Large candidate set — parallel dispatch_apply with prefetch
-            unsigned numThreads = std::thread::hardware_concurrency();
-            if (numThreads < 1) numThreads = 1;
-            if (numThreads > 32) numThreads = 32;
-            size_t chunkSize = (candidateCount + numThreads - 1) / numThreads;
-
-            __block std::vector<std::vector<Match>> threadResults(numThreads);
-            uint64_t capturedGen = myGen;
-            const uint32_t* candidatesData = candidates.data();
-            const auto* astPtr = ast.get();
-            const auto* typesPtr = types_.data();
-            const auto* sizesPtr = sizes_.data();
-            const auto* modTimesPtr = modTimes_.data();
-            const auto& namePool = namePool_;
-            const auto& origNamePool = origNamePool_;
-            const auto& lowerPathPool = lowerPathPool_;
-            const auto& pathPool = pathPool_;
-            const auto& pIndices = pathIndices_;
-            // Per-thread RE2 clones to avoid DFA mutex contention
-            auto perThreadCaches = cloneRegexCachePerThread(regexCache, numThreads);
-            auto* ptcPtr = perThreadCaches.data();
-            const auto& sTerm = scoringTerm;
-
-            dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
-            dispatch_apply(numThreads, queue, ^(size_t t) {
-                size_t start = t * chunkSize;
-                size_t end = std::min(start + chunkSize, candidateCount);
-                if (start >= end) return;
-                auto& local = threadResults[t];
-                std::vector<char> localPathBuf;
-                const auto& regCache = ptcPtr[t];
-                for (size_t ci = start; ci < end; ci++) {
-                    if ((ci & 1023) == 0 && genPtr->load(std::memory_order_relaxed) != capturedGen) return;
-                    if (ci + PREFETCH_DIST < end) {
-                        uint32_t futureIdx = candidatesData[ci + PREFETCH_DIST];
-                        __builtin_prefetch(typesPtr + futureIdx, 0, 0);
-                        __builtin_prefetch(namePool.entries() + futureIdx, 0, 0);
-                    }
-                    uint32_t idx = candidatesData[ci];
-                    if (typesPtr[idx] == 0) continue;
-                    const char* nd = namePool.data(idx);
-                    uint16_t nl = namePool.length(idx);
-                    uint32_t pi = pIndices[idx];
-                    const char* pd = lowerPathPool.data(pi);
-                    uint16_t pl = lowerPathPool.length(pi);
-                    const char* ond = origNamePool.data(idx);
-                    uint16_t onl = origNamePool.length(idx);
-                    const char* opd = pathPool.data(pi);
-                    uint16_t opl = pathPool.length(pi);
-                    if (!evalNode(*astPtr, typesPtr[idx], sizesPtr[idx],
-                                  static_cast<time_t>(modTimesPtr[idx]),
-                                  nd, nl, pd, pl, ond, onl, opd, opl,
-                                  localPathBuf, regCache)) continue;
-                    uint8_t priority = 2;
-                    if (!sTerm.empty()) {
-                        if (me::simdContains(nd, nl, sTerm.data(), sTerm.size())) {
-                            priority = namePriority(nd, nl, sTerm.data(), sTerm.size());
-                        } else {
-                            priority = 3;
-                        }
-                    }
-                    local.push_back({idx, priority, static_cast<uint32_t>(pl + 1 + nl)});
-                }
-            });
-
-            if (genPtr->load(std::memory_order_relaxed) != myGen) return {};
-            for (auto& v : threadResults) {
-                merged.insert(merged.end(), v.begin(), v.end());
+    // Only retain each worker's best K references. Unlimited queries keep every match.
+    struct RankedMatches {
+        std::vector<Match>& values;
+        size_t limit;
+        bool ordered = false;
+        static bool less(const Match& a, const Match& b) {
+            if (a.priority != b.priority) return a.priority < b.priority;
+            if (a.pathLen != b.pathLen) return a.pathLen < b.pathLen;
+            return a.idx < b.idx;
+        }
+        bool full() const { return limit && values.size() >= limit; }
+        void push_back(Match match) {
+            if (!limit || ordered) { values.push_back(match); return; }
+            if (values.size() < limit) {
+                values.push_back(match);
+                std::push_heap(values.begin(), values.end(), less);
+            } else if (less(match, values.front())) {
+                std::pop_heap(values.begin(), values.end(), less);
+                values.back() = match;
+                std::push_heap(values.begin(), values.end(), less);
             }
-        } else {
-            // Small candidate set — single-threaded with prefetch
-            const uint32_t* candidatesData = candidates.data();
-            const auto* smallTypesPtr = types_.data();
-            const auto* smallSizesPtr = sizes_.data();
-            const auto* smallModTimesPtr = modTimes_.data();
-            for (size_t ci = 0; ci < candidateCount; ci++) {
-                if ((ci & 1023) == 0 && genPtr->load(std::memory_order_relaxed) != myGen) return {};
-                if (ci + PREFETCH_DIST < candidateCount) {
-                    uint32_t futureIdx = candidatesData[ci + PREFETCH_DIST];
-                    __builtin_prefetch(smallTypesPtr + futureIdx, 0, 0);
-                    __builtin_prefetch(namePool_.entries() + futureIdx, 0, 0);
+        }
+    };
+
+    const auto* astPtr = ast.get();
+    const auto lowerNames = names_.lower();
+    const auto originalNames = names_.original();
+    const auto lowerPaths = pathPool_.lower();
+    const bool singleSubstring = astPtr->type == QueryNodeType::TERM && astPtr->mode == MatchMode::SUBSTRING;
+    const bool pureFilter = !useTrigramIndex && needs.isPureFilter();
+    const uint32_t* ids = useTrigramIndex ? candidates.data() : nullptr;
+    const size_t workCount = useTrigramIndex ? candidates.size() : totalSize;
+    const unsigned numThreads = workCount < 10000 ? 1 : std::clamp(std::thread::hardware_concurrency(), 1u, 32u);
+    const size_t chunkSize = (workCount + numThreads - 1) / numThreads;
+    __block std::vector<std::vector<Match>> threadResults(numThreads);
+    auto perThreadCaches = numThreads > 1 ? cloneRegexCachePerThread(regexCache, numThreads) : std::vector<RegexCache>{};
+    const RegexCache* caches = numThreads > 1 ? perThreadCaches.data() : &regexCache;
+
+    // Select the single-condition loop once per worker, outside its record loop.
+    auto scanRecords = [&](size_t start, size_t end, RankedMatches& out, const RegexCache& cache) {
+        DirectoryPool::Cursor lowerParent(lowerPaths), originalParent(pathPool_);
+        std::vector<char> buffer;
+        auto scan = [&]<bool Simple, bool CaseSensitive>() {
+            for (size_t i = start; i < end; ++i) {
+                if (((i - start) & 1023) == 0 && genPtr->load(std::memory_order_relaxed) != myGen) return;
+                if (i + 8 < end) {
+                    uint32_t future = ids ? ids[i + 8] : static_cast<uint32_t>(i + 8);
+                    __builtin_prefetch(types_.data() + future, 0, 0);
+                    __builtin_prefetch(lowerNames.entries() + future, 0, 0);
                 }
-                uint32_t idx = candidatesData[ci];
-                if (smallTypesPtr[idx] == 0) continue;
-                const char* nd = namePool_.data(idx);
-                uint16_t nl = namePool_.length(idx);
-                uint32_t pi = pathIndices_[idx];
-                const char* pd = lowerPathPool_.data(pi);
-                uint16_t pl = lowerPathPool_.length(pi);
-                const char* ond = origNamePool_.data(idx);
-                uint16_t onl = origNamePool_.length(idx);
-                const char* opd = pathPool_.data(pi);
-                uint16_t opl = pathPool_.length(pi);
-                if (!evalNode(*ast, smallTypesPtr[idx], smallSizesPtr[idx],
-                              static_cast<time_t>(smallModTimesPtr[idx]),
-                              nd, nl, pd, pl, ond, onl, opd, opl,
-                              pathBuf, regexCache)) continue;
+                const uint32_t idx = ids ? ids[i] : static_cast<uint32_t>(i);
+                if (types_[idx] == 0) continue;
+                const auto name = lowerNames.view(idx);
+                const uint32_t parent = pathIndices_[idx];
+                const uint16_t pathLength = lowerPaths.length(parent);
+                if constexpr (Simple) {
+                    const auto comparedName = CaseSensitive ? originalNames.view(idx) : name;
+                    const auto& term = CaseSensitive ? astPtr->text : astPtr->textLower;
+                    bool matched = (CaseSensitive && term.empty()) ||
+                        me::simdContains(comparedName.data(), comparedName.size(), term.data(), term.size());
+                    if (!matched && !astPtr->nameOnly) {
+                        const char* path = CaseSensitive ? originalParent.data(parent) : lowerParent.data(parent);
+                        const uint16_t length = CaseSensitive ? pathPool_.length(parent) : pathLength;
+                        const size_t fullLength = buildFullPathBuf(buffer, path, length, comparedName.data(), comparedName.size());
+                        matched = me::simdContains(buffer.data(), fullLength, term.data(), term.size());
+                    }
+                    if (!matched) continue;
+                } else {
+                    const char* path = needs.needsPath ? lowerParent.data(parent) : "";
+                    const char* originalPath = originalPathNeeded ? originalParent.data(parent) : "";
+                    if (!evalNode(*astPtr, types_[idx], sizes_[idx], static_cast<time_t>(modTimes_[idx]),
+                                  name.data(), name.size(), path, pathLength,
+                                  originalNames.data(idx), originalNames.length(idx), originalPath, pathPool_.length(parent),
+                                  buffer, cache)) continue;
+                }
                 uint8_t priority = 2;
                 if (!scoringTerm.empty()) {
-                    if (me::simdContains(nd, nl, scoringTerm.data(), scoringTerm.size())) {
-                        priority = namePriority(nd, nl, scoringTerm.data(), scoringTerm.size());
-                    } else {
-                        priority = 3;
-                    }
+                    priority = me::simdContains(name.data(), name.size(), scoringTerm.data(), scoringTerm.size())
+                        ? namePriority(name.data(), name.size(), scoringTerm.data(), scoringTerm.size()) : 3;
                 }
-                merged.push_back({idx, priority, static_cast<uint32_t>(pl + 1 + nl)});
+                out.push_back({idx, priority, static_cast<uint32_t>(pathLength + 1 + name.size())});
             }
-        }
-    } else {
-        // Linear scan — parallelize with GCD dispatch_apply
-        unsigned numThreads = std::thread::hardware_concurrency();
-        if (numThreads < 1) numThreads = 1;
-        if (numThreads > 32) numThreads = 32;
-        // For small record sets, don't over-parallelize
-        if (totalSize < 10000) numThreads = 1;
+        };
+        if (!singleSubstring) scan.template operator()<false, false>();
+        else if (astPtr->caseSensitive) scan.template operator()<true, true>();
+        else scan.template operator()<true, false>();
+    };
 
-        size_t chunkSize = (totalSize + numThreads - 1) / numThreads;
-        __block std::vector<std::vector<Match>> threadResults(numThreads);
-
-        uint64_t capturedGen = myGen;
-        bool pureFilter = needs.isPureFilter();
-
-        // Capture references for block
-        const auto* astPtr = ast.get();
-        const auto* typesPtr = types_.data();
-        const auto* sizesPtr = sizes_.data();
-        const auto* modTimesPtr = modTimes_.data();
-        const auto& namePool = namePool_;
-        const auto& origNamePool = origNamePool_;
-        const auto& lowerPathPool = lowerPathPool_;
-        const auto& pathPool = pathPool_;
-        const auto& pIndices = pathIndices_;
-        // Per-thread RE2 clones to avoid DFA mutex contention
-        auto perThreadCaches = cloneRegexCachePerThread(regexCache, numThreads);
-        auto* ptcPtr = perThreadCaches.data();
-        const auto& sTerm = scoringTerm;
-
-        dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0);
-        dispatch_apply(numThreads, queue, ^(size_t t) {
-            size_t start = t * chunkSize;
-            size_t end = std::min(start + chunkSize, totalSize);
-            if (start >= end) return;
-
-            auto& local = threadResults[t];
-            std::vector<char> localPathBuf;
-            const auto& regCache = ptcPtr[t];
-
-            if (pureFilter) {
-                // ── SIMD-batched pure-filter fast path ──
-                size_t idx = start;
-
-                size_t alignedStart = (start + 15) & ~size_t(15);
-                if (alignedStart > end) alignedStart = end;
-
-                // Scalar pre-amble
-                for (; idx < alignedStart; idx++) {
-                    if (typesPtr[idx] == 0) continue;
-                    if (!evalNode(*astPtr, typesPtr[idx], sizesPtr[idx],
-                                  static_cast<time_t>(modTimesPtr[idx]),
-                                  nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
-                                  localPathBuf, regCache)) continue;
+    auto beforePhase = std::chrono::steady_clock::now();
+    auto worker = ^(size_t t) {
+        const size_t start = t * chunkSize, end = std::min(start + chunkSize, workCount);
+        RankedMatches local{threadResults[t], maxResults, pureFilter};
+        if (!pureFilter) { scanRecords(start, end, local, caches[t]); return; }
+        std::vector<char> buffer;
+        // Pure metadata matches rank by record ID, so later hits cannot beat the first K.
+        for (size_t i = start; i < end;) {
+            if (((i - start) & 1023) == 0 && genPtr->load(std::memory_order_relaxed) != myGen) return;
+            uint16_t live = i + 16 <= end ? me::simdTypeLive16(types_.data() + i) : (types_[i] ? 1 : 0);
+            const size_t width = i + 16 <= end ? 16 : 1;
+            while (live) {
+                const size_t idx = i + __builtin_ctz(live);
+                if (evalNode(*astPtr, types_[idx], sizes_[idx], static_cast<time_t>(modTimes_[idx]),
+                             nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0, buffer, caches[t])) {
                     local.push_back({static_cast<uint32_t>(idx), 2, 0});
+                    if (local.full()) return;
                 }
-
-                // SIMD main loop: 16 records per iteration
-                for (; idx + 16 <= end; idx += 16) {
-                    if ((idx & 4095) == 0 && genPtr->load(std::memory_order_relaxed) != capturedGen) return;
-
-                    uint16_t liveMask = me::simdTypeLive16(typesPtr + idx);
-                    if (liveMask == 0) continue;
-
-                    while (liveMask) {
-                        int bit = __builtin_ctz(liveMask);
-                        size_t ri = idx + bit;
-                        if (evalNode(*astPtr, typesPtr[ri], sizesPtr[ri],
-                                     static_cast<time_t>(modTimesPtr[ri]),
-                                     nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
-                                     localPathBuf, regCache)) {
-                            local.push_back({static_cast<uint32_t>(ri), 2, 0});
-                        }
-                        liveMask &= liveMask - 1;
-                    }
-                }
-
-                // Scalar tail
-                for (; idx < end; idx++) {
-                    if (typesPtr[idx] == 0) continue;
-                    if (!evalNode(*astPtr, typesPtr[idx], sizesPtr[idx],
-                                  static_cast<time_t>(modTimesPtr[idx]),
-                                  nullptr, 0, nullptr, 0, nullptr, 0, nullptr, 0,
-                                  localPathBuf, regCache)) continue;
-                    local.push_back({static_cast<uint32_t>(idx), 2, 0});
-                }
-            } else {
-                // ── Full evaluation path (needs string access) ──
-                for (size_t idx = start; idx < end; idx++) {
-                    if ((idx & 4095) == 0 && genPtr->load(std::memory_order_relaxed) != capturedGen) return;
-
-                    if (typesPtr[idx] == 0) continue;
-                    const char* nd = namePool.data(static_cast<uint32_t>(idx));
-                    uint16_t nl = namePool.length(static_cast<uint32_t>(idx));
-                    uint32_t pi = pIndices[idx];
-                    const char* pd = lowerPathPool.data(pi);
-                    uint16_t pl = lowerPathPool.length(pi);
-                    const char* ond = origNamePool.data(static_cast<uint32_t>(idx));
-                    uint16_t onl = origNamePool.length(static_cast<uint32_t>(idx));
-                    const char* opd = pathPool.data(pi);
-                    uint16_t opl = pathPool.length(pi);
-
-                    if (!evalNode(*astPtr, typesPtr[idx], sizesPtr[idx],
-                                  static_cast<time_t>(modTimesPtr[idx]),
-                                  nd, nl, pd, pl, ond, onl, opd, opl,
-                                  localPathBuf, regCache)) continue;
-
-                    uint8_t priority = 2;
-                    if (!sTerm.empty()) {
-                        if (me::simdContains(nd, nl, sTerm.data(), sTerm.size())) {
-                            priority = namePriority(nd, nl, sTerm.data(), sTerm.size());
-                        } else {
-                            priority = 3;
-                        }
-                    }
-                    uint32_t pLen = static_cast<uint32_t>(pl + 1 + nl);
-                    local.push_back({static_cast<uint32_t>(idx), priority, pLen});
-                }
+                live &= live - 1;
             }
-        });
-
-        // Check if superseded after dispatch_apply
-        if (genPtr->load(std::memory_order_relaxed) != myGen) return {};
-
-        // Merge thread-local results
-        for (auto& v : threadResults) {
-            merged.insert(merged.end(), v.begin(), v.end());
+            i += width;
         }
-    }
+    };
+    if (numThreads == 1) worker(0);
+    else dispatch_apply(numThreads, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), worker);
+    if (genPtr->load(std::memory_order_relaxed) != myGen) return {};
+    size_t retained = 0;
+    for (const auto& local : threadResults) retained += local.size();
+    merged.reserve(retained);
+    for (const auto& local : threadResults) merged.insert(merged.end(), local.begin(), local.end());
 
     auto afterPhase = std::chrono::steady_clock::now();
 
@@ -1022,10 +884,7 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
 
     // Sort by priority, then path length
     auto beforeSort = std::chrono::steady_clock::now();
-    auto cmp = [](const Match& a, const Match& b) {
-        if (a.priority != b.priority) return a.priority < b.priority;
-        return a.pathLen < b.pathLen;
-    };
+    auto cmp = RankedMatches::less;
 
     size_t resultCount = merged.size();
     if (maxResults > 0 && resultCount > maxResults) resultCount = maxResults;
@@ -1057,14 +916,14 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
     timing.nameMatches = 0;
     timing.pathMatches = 0;
     timing.resultCount = result.size();
-    timing.usedTrigram = useTrigramIndex;
+    timing.usedTrigram = useTrigramIndex && !usedPathScan;
     if (useTrigramIndex) {
-        if (!trigramKey.empty()) {
+        if (usedPathScan) {
+            timing.searchPath = "advanced-path-scan";
+        } else if (!trigramKey.empty()) {
             timing.searchPath = "advanced-trigram";
         } else if (extOk && !extractExtFilterValues(*ast).empty()) {
             timing.searchPath = "advanced-ext-index";
-        } else if (!bestPathSegTerm(*ast).empty()) {
-            timing.searchPath = "advanced-path-trigram";
         } else {
             timing.searchPath = "advanced-regex-trigram";
         }

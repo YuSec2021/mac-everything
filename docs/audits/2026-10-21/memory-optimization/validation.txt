@@ -1,0 +1,12 @@
+Fast regression suite:
+                           ║
+╚══════════════════════════════════════════╝
+
+  Tests passed: 12023
+  Tests failed: 0
+  Result:       ALL PASSED ✓
+
+
+AddressSanitizer focused checks:
+Passed=164 Failed=0
+Xcode Release: BUILD SUCCEEDED (CODE_SIGNING_ALLOWED=NO)

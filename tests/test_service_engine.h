@@ -32,6 +32,11 @@ static bool runPart40() {
         auto engine = std::make_unique<ServiceEngine>(config);
         check(engine != nullptr, "ServiceEngine construction succeeds");
 
+        bool completed = false;
+        engine->onContentIndexComplete = [&](uint32_t count) { completed = count == 0; };
+        engine->rebuildContentIndex();
+        check(completed, "Disabled content indexing completes without scheduling a scan");
+
         check(engine->recordCount() == 0, "Initial recordCount is 0");
         check(!engine->isScanning(), "Not scanning initially");
         check(!engine->isMonitoring(), "Not monitoring initially");

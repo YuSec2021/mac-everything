@@ -1,0 +1,4 @@
+footprint=1626.41
+tree arrays=20.2482 nodes=707607 components=8117625 edges=707606
+tree arrays=20.2482 nodes=707607 components=8117625 edges=707606
+relieved=1626.41

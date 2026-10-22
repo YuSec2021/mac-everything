@@ -80,6 +80,12 @@ private:
     /// Write a StringPool section: bufferSize(4) + buffer + entryCount(4) + entries
     static bool writeStringPoolSection(FILE* f, const StringPool& pool,
                                        uint32_t& outSize, uint32_t& outCRC);
+    static bool writeStringPoolSection(FILE* f, FoldedNamePool::View pool,
+                                       uint32_t& outSize, uint32_t& outCRC);
+    static bool writeStringPoolSection(FILE* f, DirectoryPool::LowerView pool,
+                                       uint32_t& outSize, uint32_t& outCRC);
+    static bool writeStringPoolSection(FILE* f, const DirectoryPool& pool,
+                                       uint32_t& outSize, uint32_t& outCRC);
 
     /// Read a StringPool section from buffer
     static bool readStringPoolSection(const uint8_t* data, size_t len, StringPool& pool);

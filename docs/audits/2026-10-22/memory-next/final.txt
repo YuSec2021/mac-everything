@@ -1,0 +1,31 @@
+ready_mib=1267.3 live=6381948 path_postings_mib=0 startup_s=11.9963
+query="readme" median_ms=6.39746 count=10000 hash=5995674137638188785 mode=advanced-trigram
+query="config" median_ms=11.0141 count=10000 hash=14342849863846784074 mode=advanced-trigram
+query="*.swift" median_ms=0.94325 count=1145 hash=13464883860713001919 mode=advanced-trigram
+query="size:>1mb" median_ms=2.63696 count=10000 hash=4348080941360507823 mode=advanced-pure-filter-soa-gcd
+query="type:folder" median_ms=7.532 count=10000 hash=2268702853707974160 mode=advanced-pure-filter-soa-gcd
+query="/Applications/" median_ms=12.413 count=13 hash=7828677548413290442 mode=advanced-linear-gcd
+query="MacEverything/readme" median_ms=5.11208 count=5 hash=13050834549969298064 mode=advanced-trigram
+query="site-packages/config" median_ms=9.84275 count=10000 hash=8596270906359641087 mode=advanced-trigram
+query="site-packages/a" median_ms=129.141 count=10000 hash=16086791654193508557 mode=advanced-path-scan
+query="MacEverything/a" median_ms=115.195 count=632 hash=1497155092292461741 mode=advanced-path-scan
+query="com.apple.Safari/a" median_ms=115.283 count=3930 hash=14238841732735501480 mode=advanced-path-scan
+query="MacEverything/.swift" median_ms=0.974375 count=33 hash=11035271079479756850 mode=advanced-trigram
+query="my_product/a" median_ms=133.247 count=10000 hash=5099099638093805283 mode=advanced-path-scan
+query="path:MacEverything ext:swift" median_ms=0.038458 count=81 hash=2183335058441640184 mode=advanced-ext-index
+query="RareSegment/a | readme" median_ms=58.3823 count=10000 hash=5455844588034572346 mode=advanced-linear-gcd
+query="!MacEverything/a" median_ms=61.2084 count=10000 hash=4974649623374552636 mode=advanced-linear-gcd
+verify="MacEverything/a" limit=0 fast=632 full=632 equal=1
+verify="MacEverything/a" limit=10000 fast=632 full=632 equal=1
+verify="com.apple.Safari/a" limit=0 fast=3930 full=3930 equal=1
+verify="com.apple.Safari/a" limit=10000 fast=3930 full=3930 equal=1
+verify="MacEverything/.swift" limit=0 fast=33 full=33 equal=1
+verify="MacEverything/.swift" limit=10000 fast=33 full=33 equal=1
+verify="site-packages/a" limit=0 fast=509053 full=509053 equal=1
+verify="site-packages/a" limit=10000 fast=10000 full=10000 equal=1
+verify="my_product/a" limit=0 fast=622874 full=622874 equal=1
+verify="my_product/a" limit=10000 fast=10000 full=10000 equal=1
+verify="MacEverything/a | MacEverything/.swift" limit=0 fast=642 full=642 equal=1
+verify="MacEverything/a | MacEverything/.swift" limit=10000 fast=642 full=642 equal=1
+verify="!MacEverything/a" limit=0 fast=6381316 full=6381316 equal=1
+verify="!MacEverything/a" limit=10000 fast=10000 full=10000 equal=1

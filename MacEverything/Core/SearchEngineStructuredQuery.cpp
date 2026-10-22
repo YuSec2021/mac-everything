@@ -13,43 +13,7 @@
 // ---------------------------------------------------------------------------
 bool SearchEngine::pathSegmentsMatch(std::string_view dirPath,
                                      const std::vector<PathSegment>& segments) {
-    if (segments.empty()) return true;
-
-    // Split dirPath into components by '/'
-    // dirPath comes from lowerPathPool_ which is already lowercase — no lowering needed
-    std::vector<std::string_view> components;
-    size_t start = 0;
-    for (size_t i = 0; i <= dirPath.size(); i++) {
-        if (i == dirPath.size() || dirPath[i] == '/') {
-            if (i > start) {
-                components.push_back(dirPath.substr(start, i - start));
-            }
-            start = i + 1;
-        }
-    }
-
-    // Match segments right-to-left against path components
-    int segIdx = static_cast<int>(segments.size()) - 1;
-    int compIdx = static_cast<int>(components.size()) - 1;
-
-    while (segIdx >= 0 && compIdx >= 0) {
-        // Input is already lowercase — direct string_view find
-        if (components[compIdx].find(segments[segIdx].text) != std::string_view::npos) {
-            segIdx--;
-            compIdx--;
-        } else {
-            if (segIdx < static_cast<int>(segments.size()) - 1 &&
-                segments[segIdx + 1].adjacentToNext == false) {
-                compIdx--;
-            } else if (segIdx == static_cast<int>(segments.size()) - 1) {
-                compIdx--;
-            } else {
-                return false;
-            }
-        }
-    }
-
-    return segIdx < 0;
+    return DirectoryPool::matchFlat(dirPath, segments);
 }
 
 // ---------------------------------------------------------------------------
@@ -78,13 +42,13 @@ void SearchEngine::treeWalkDown(uint32_t dirIdx, const ParsedQuery& pq,
                                 size_t totalSize, const QueryCancelCtx& cancel,
                                 std::vector<Match>& merged) const {
     // Build the full lowered directory path for this dir record
-    auto lpView = lowerPathPool_.view(pathIndices_[dirIdx]);
+    auto lpView = pathPool_.lower().view(pathIndices_[dirIdx]);
     std::string fullDirPath(lpView);
     if (!fullDirPath.empty() && fullDirPath.back() != '/') fullDirPath += '/';
-    fullDirPath += std::string(namePool_.data(dirIdx), namePool_.length(dirIdx));
+    fullDirPath += std::string(names_.lower().data(dirIdx), names_.lower().length(dirIdx));
 
     // Look up children of this directory
-    auto it = lowerPathLookup_.find(fullDirPath);
+    auto it = me::findPathRecord(lowerPathLookup_, fullDirPath, [this](uint32_t i) { return pathPool_.lower().view(i); });
     if (it == lowerPathLookup_.end()) return;
 
     uint32_t childPathIdx = it->second;
@@ -97,8 +61,8 @@ void SearchEngine::treeWalkDown(uint32_t dirIdx, const ParsedQuery& pq,
         const auto& namePattern = pq.namePattern;
         for (uint32_t childIdx : childRecords) {
             if (types_[childIdx] == 0) continue;
-            const char* nd = namePool_.data(childIdx);
-            uint16_t nl = namePool_.length(childIdx);
+            const char* nd = names_.lower().data(childIdx);
+            uint16_t nl = names_.lower().length(childIdx);
 
             if (pq.mode == QueryMode::DIR_EXACT) {
                 if (types_[childIdx] != 2) continue;
@@ -121,8 +85,8 @@ void SearchEngine::treeWalkDown(uint32_t dirIdx, const ParsedQuery& pq,
     for (uint32_t childIdx : childRecords) {
         if (cancel.cancelled()) return;
         if (types_[childIdx] != 2) continue; // must be directory
-        const char* nd = namePool_.data(childIdx);
-        uint16_t nl = namePool_.length(childIdx);
+        const char* nd = names_.lower().data(childIdx);
+        uint16_t nl = names_.lower().length(childIdx);
         // Segment match: name must contain segment text
         if (!me::simdContains(nd, nl, segText.data(), segText.size())) continue;
 
@@ -183,24 +147,12 @@ void SearchEngine::queryStructured(const ParsedQuery& pq,
     // Fallback strategy selection:
     // - With path segments: path-first scan (iterate only records under
     //   matching paths via pathIdxToRecords_, then check names)
-    // - Without path segments: buffer-scan (SIMD scan namePool_.buffer_)
+    // - Without path segments: buffer-scan (SIMD scan names_.lower().buffer_)
     // ------------------------------------------------------------------
     bool hasPathSegs = !pq.pathSegments.empty();
 
     if (hasPathSegs) {
-        // Path-first: narrow candidate paths, then iterate only their records.
-        // Try path trigram index first (O(candidates) vs O(all_paths)).
-        // Find the best segment (longest, >= 3 chars) for trigram lookup.
-        int bestSegIdx = -1;
-        size_t bestSegLen = 0;
-        for (size_t i = 0; i < pq.pathSegments.size(); i++) {
-            if (pq.pathSegments[i].text.size() >= 3 &&
-                pq.pathSegments[i].text.size() > bestSegLen) {
-                bestSegLen = pq.pathSegments[i].text.size();
-                bestSegIdx = static_cast<int>(i);
-            }
-        }
-
+        // Scan unique directory paths, then inspect only their records.
         // Lambda: check name match and emit result for records under pathIdx pi
         auto emitRecordsForPath = [&](uint32_t pi) {
             if (pi >= pathIdxToRecords_.size()) return;
@@ -209,8 +161,8 @@ void SearchEngine::queryStructured(const ParsedQuery& pq,
                 if (cancel.cancelled()) return;
                 if (types_[idx] == 0) continue;
 
-                const char* nd = namePool_.data(idx);
-                uint16_t nl = namePool_.length(idx);
+                const char* nd = names_.lower().data(idx);
+                uint16_t nl = names_.lower().length(idx);
 
                 if (pq.mode == QueryMode::DIR_EXACT) {
                     if (types_[idx] != 2) continue;
@@ -226,76 +178,22 @@ void SearchEngine::queryStructured(const ParsedQuery& pq,
             }
         };
 
-        bool usedTrigram = false;
-        if (bestSegIdx >= 0 && !pathTrigramIndex_.empty()) {
-            bool allFound = false;
-            auto candidatePaths = intersectPostingLists(
-                pathTrigramIndex_, pq.pathSegments[bestSegIdx].text, allFound);
-
-            if (allFound) {
-                usedTrigram = true;
-                for (uint32_t pi : candidatePaths) {
-                    if (cancel.cancelled()) return;
-                    if (!lowerPathPool_.isLive(pi)) continue;
-                    std::string_view lpv(lowerPathPool_.data(pi), lowerPathPool_.length(pi));
-                    if (!pathSegmentsMatch(lpv, pq.pathSegments)) continue;
-                    emitRecordsForPath(pi);
-                }
-            }
-        }
-
-        if (!usedTrigram) {
-            // Linear scan all paths (no usable trigrams)
-            uint32_t pathCount = lowerPathPool_.entryCount();
-            for (uint32_t pi = 0; pi < pathCount; pi++) {
-                if (cancel.cancelled()) return;
-                if (!lowerPathPool_.isLive(pi)) continue;
-                std::string_view lpv(lowerPathPool_.data(pi), lowerPathPool_.length(pi));
-                if (!pathSegmentsMatch(lpv, pq.pathSegments)) continue;
-                emitRecordsForPath(pi);
-            }
+        for (uint32_t pi = 0; pi < pathPool_.lower().entryCount(); ++pi) {
+            if (cancel.cancelled()) return;
+            if (!pathPool_.lower().isLive(pi)) continue;
+            if (!pathPool_.matchesSegments(pi, pq.pathSegments)) continue;
+            emitRecordsForPath(pi);
         }
     } else {
-        // No path segments: buffer-scan the contiguous namePool_ buffer
-        // with SIMD, then resolve byte offsets → record indices.
-        std::vector<size_t> hitOffsets;
-        me::simdFindAll(namePool_.rawBuffer(), namePool_.rawSize(),
-                        namePattern.data(), namePattern.size(), hitOffsets);
-
-        if (cancel.cancelled()) return;
-
-        const auto* entries = namePool_.entries();
-        uint32_t entryCount = namePool_.entryCount();
-
-        // hitOffsets are in ascending order. Walk cursor in sync — O(hits + entries).
-        uint32_t cursor = 0;
-        uint32_t lastIdx = UINT32_MAX;
-
-        for (size_t hitOff : hitOffsets) {
-            while (cursor + 1 < entryCount &&
-                   entries[cursor + 1].offset <= static_cast<uint32_t>(hitOff)) {
-                cursor++;
-            }
-
-            uint32_t entryEnd = entries[cursor].offset + entries[cursor].length;
-            if (hitOff < entries[cursor].offset ||
-                hitOff + namePattern.size() > entryEnd)
-                continue;
-
-            if (cursor == lastIdx) continue;
-            lastIdx = cursor;
-
-            if (types_[cursor] == 0) continue;
-
-            if (pq.mode == QueryMode::DIR_EXACT) {
-                if (types_[cursor] != 2) continue;
-                if (entries[cursor].length != namePattern.size()) continue;
-            }
-
-            uint8_t priority = namePriority(namePool_.data(cursor), namePool_.length(cursor),
-                                             namePattern.data(), namePattern.size());
-            uint32_t pLen = static_cast<uint32_t>(pathPool_.length(pathIndices_[cursor]) + 1 + entries[cursor].length);
-            merged.push_back({cursor, priority, pLen});
+        for (uint32_t idx = 0; idx < names_.lower().entryCount(); ++idx) {
+            if ((idx & 1023) == 0 && cancel.cancelled()) return;
+            if (types_[idx] == 0) continue;
+            const auto name = names_.lower().view(idx);
+            if (!me::simdContains(name.data(), name.size(), namePattern.data(), namePattern.size())) continue;
+            if (pq.mode == QueryMode::DIR_EXACT && (types_[idx] != 2 || name.size() != namePattern.size())) continue;
+            uint8_t priority = namePriority(name.data(), name.size(), namePattern.data(), namePattern.size());
+            uint32_t pLen = pathPool_.length(pathIndices_[idx]) + 1 + name.size();
+            merged.push_back({idx, priority, pLen});
         }
     }
 }
@@ -317,8 +215,8 @@ bool SearchEngine::queryStructuredNameAnchor(const ParsedQuery& pq,
         uint32_t idx = candidates[ci];
         if (types_[idx] == 0) continue;
 
-        const char* nameData = namePool_.data(idx);
-        uint16_t nameLen = namePool_.length(idx);
+        const char* nameData = names_.lower().data(idx);
+        uint16_t nameLen = names_.lower().length(idx);
 
         if (pq.mode == QueryMode::DIR_EXACT) {
             if (types_[idx] != 2) continue;
@@ -329,7 +227,7 @@ bool SearchEngine::queryStructuredNameAnchor(const ParsedQuery& pq,
         }
 
         if (!pq.pathSegments.empty()) {
-            if (!pathSegmentsMatch(lowerPathPool_.view(pathIndices_[idx]), pq.pathSegments)) continue;
+            if (!pathPool_.matchesSegments(pathIndices_[idx], pq.pathSegments)) continue;
         }
 
         uint8_t priority = namePriority(nameData, nameLen, namePattern.data(), namePattern.size());
@@ -370,13 +268,13 @@ bool SearchEngine::queryStructuredPathAnchor(const ParsedQuery& pq,
         if (types_[idx] == 0) continue;
         if (types_[idx] != 2) continue; // anchor must be a directory
 
-        const char* nd = namePool_.data(idx);
-        uint16_t nl = namePool_.length(idx);
+        const char* nd = names_.lower().data(idx);
+        uint16_t nl = names_.lower().length(idx);
         if (!me::simdContains(nd, nl, anchorText.data(), anchorText.size())) continue;
 
         // Verify ancestor segments [0..anchorIdx-1] against this record's path
         if (anchorIdx > 0) {
-            std::string_view dirPath = lowerPathPool_.view(pathIndices_[idx]);
+            auto dirPath = pathPool_.lower().view(pathIndices_[idx]);
             std::vector<PathSegment> ancestorSegs(
                 pq.pathSegments.begin(),
                 pq.pathSegments.begin() + static_cast<int>(anchorIdx));

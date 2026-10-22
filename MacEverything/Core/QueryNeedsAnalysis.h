@@ -21,7 +21,8 @@ inline QueryNeeds analyzeQueryNeeds(const QueryNode& node) {
     switch (node.type) {
     case QueryNodeType::TERM:
         needs.needsName = true;
-        needs.needsPath = true;  // TERM also checks full path
+        needs.needsPath = ((node.mode == MatchMode::SUBSTRING || node.mode == MatchMode::REGEX) && !node.nameOnly) ||
+                          (node.mode == MatchMode::GLOB && node.textLower.find('/') != std::string::npos);
         break;
 
     case QueryNodeType::FILTER: {
@@ -43,7 +44,7 @@ inline QueryNeeds analyzeQueryNeeds(const QueryNode& node) {
             needs.needsPath = true;
         } else if (f == "__pathseg") {
             needs.needsPath = true;
-            needs.needsName = true; // pathSegmentsMatch uses full path including name
+            needs.needsName = true; // __pathseg evaluation receives name and parent fields
         }
         break;
     }

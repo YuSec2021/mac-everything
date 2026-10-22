@@ -12,6 +12,8 @@
 #include <chrono>
 #include <algorithm>
 #include <cstdlib>
+#include <charconv>
+#include <cctype>
 
 // ---------------------------------------------------------------------------
 // JSON helpers
@@ -135,6 +137,12 @@ bool HttpServer::start(uint16_t port,
         return false;
     }
 
+    if (::pipe(wakePipe_) != 0) {
+        ::close(serverFd_);
+        serverFd_ = -1;
+        return false;
+    }
+
     port_ = port;
     running_.store(true, std::memory_order_release);
     acceptThread_ = std::thread(&HttpServer::acceptLoop, this);
@@ -146,14 +154,17 @@ bool HttpServer::start(uint16_t port,
 void HttpServer::stop() {
     if (!running_.exchange(false, std::memory_order_acq_rel)) return;
 
-    if (serverFd_ >= 0) {
-        ::close(serverFd_);
-        serverFd_ = -1;
-    }
-
+    // Wake the blocking poll without racing the listener descriptor's lifetime.
+    const char wake = 1;
+    (void)::write(wakePipe_[1], &wake, 1);
     if (acceptThread_.joinable()) {
         acceptThread_.join();
     }
+    ::close(serverFd_);
+    serverFd_ = -1;
+    ::close(wakePipe_[0]);
+    ::close(wakePipe_[1]);
+    wakePipe_[0] = wakePipe_[1] = -1;
 
     LOG_INFO("HttpServer", "Stopped");
 }
@@ -176,16 +187,14 @@ void HttpServer::setAdminCallbacks(AdminCallbacks callbacks) {
 
 void HttpServer::acceptLoop() {
     while (running_.load(std::memory_order_relaxed)) {
-        struct pollfd pfd{};
-        pfd.fd = serverFd_;
-        pfd.events = POLLIN;
-
-        int ret = ::poll(&pfd, 1, 500);
+        struct pollfd fds[2]{{serverFd_, POLLIN, 0}, {wakePipe_[0], POLLIN, 0}};
+        int ret = ::poll(fds, 2, -1);
         if (ret < 0) {
             if (errno == EINTR) continue;
             break;
         }
-        if (ret == 0) continue; // timeout, check running_
+        if (!running_.load(std::memory_order_relaxed) || fds[1].revents) break;
+        if (!(fds[0].revents & POLLIN)) break;
 
         int clientFd = ::accept(serverFd_, nullptr, nullptr);
         if (clientFd < 0) continue;
@@ -195,49 +204,104 @@ void HttpServer::acceptLoop() {
 }
 
 void HttpServer::handleConnection(int clientFd) {
-    // Set recv timeout to prevent a slow client from blocking the accept loop
-    struct timeval tv{5, 0}; // 5 seconds
+    struct timeval tv{5, 0};
     ::setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    ::setsockopt(clientFd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    int noSigPipe = 1;
+    ::setsockopt(clientFd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, sizeof(noSigPipe));
 
-    // Read request headers + partial body (up to 8KB initial read)
-    char buf[8192];
-    ssize_t n = ::recv(clientFd, buf, sizeof(buf) - 1, 0);
-    if (n <= 0) {
-        ::close(clientFd);
-        return;
+    constexpr size_t maxHeaders = 8192;
+    constexpr size_t maxBody = 65536;
+    std::string raw;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    auto receive = [&](size_t limit) {
+        if (!running_.load(std::memory_order_relaxed) ||
+            std::chrono::steady_clock::now() >= deadline) return false;
+        auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (remaining <= 0) return false;
+        struct timeval timeout{static_cast<time_t>(remaining / 1000000),
+                               static_cast<suseconds_t>(remaining % 1000000)};
+        ::setsockopt(clientFd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+        char buf[4096];
+        ssize_t n = ::recv(clientFd, buf, std::min(sizeof(buf), limit), 0);
+        if (n <= 0) return false;
+        raw.append(buf, static_cast<size_t>(n));
+        return true;
+    };
+    std::string response;
+    size_t headerEnd;
+    while ((headerEnd = raw.find("\r\n\r\n")) == std::string::npos) {
+        if (raw.size() >= maxHeaders) {
+            response = errorResponse(413, "Headers too large");
+            break;
+        }
+        if (!receive(maxHeaders - raw.size())) {
+            ::close(clientFd);
+            return;
+        }
     }
-    buf[n] = '\0';
-
-    std::string raw(buf, static_cast<size_t>(n));
-
-    // If Content-Length header is present, ensure we have the full body
-    auto clPos = raw.find("Content-Length:");
-    if (clPos == std::string::npos) clPos = raw.find("content-length:");
-    if (clPos != std::string::npos) {
-        size_t valStart = clPos + 15; // strlen("Content-Length:")
-        while (valStart < raw.size() && raw[valStart] == ' ') ++valStart;
-        size_t valEnd = raw.find("\r\n", valStart);
-        if (valEnd != std::string::npos) {
-            size_t contentLength = std::stoul(raw.substr(valStart, valEnd - valStart));
-            size_t headerEnd = raw.find("\r\n\r\n");
-            if (headerEnd != std::string::npos) {
-                size_t bodyStart = headerEnd + 4;
-                size_t bodyHave = raw.size() - bodyStart;
-                // Read remaining body bytes if needed (up to 64KB limit)
-                size_t needed = (contentLength > 65536) ? 0 : contentLength;
-                while (bodyHave < needed) {
-                    char extra[4096];
-                    ssize_t m = ::recv(clientFd, extra, sizeof(extra), 0);
-                    if (m <= 0) break;
-                    raw.append(extra, static_cast<size_t>(m));
-                    bodyHave += static_cast<size_t>(m);
+    if (response.empty()) {
+        size_t contentLength = 0;
+        bool hasLength = false;
+        bool hasHost = false;
+        std::istringstream headers(raw.substr(0, headerEnd));
+        std::string line;
+        std::getline(headers, line); // request line
+        while (std::getline(headers, line)) {
+            auto colon = line.find(':');
+            if (colon == std::string::npos) {
+                response = errorResponse(400, "Malformed header");
+                break;
+            }
+            std::string name = line.substr(0, colon);
+            std::transform(name.begin(), name.end(), name.begin(),
+                           [](unsigned char c) { return std::tolower(c); });
+            std::string value = line.substr(colon + 1);
+            auto first = value.find_first_not_of(" \t");
+            value = first == std::string::npos ? "" : value.substr(first);
+            auto last = value.find_last_not_of(" \t\r");
+            value = last == std::string::npos ? "" : value.substr(0, last + 1);
+            if (name == "host") {
+                bool local = false;
+                for (const auto* host : {"localhost", "127.0.0.1"}) {
+                    if (value == host || value == std::string(host) + ":" + std::to_string(port_)) local = true;
+                }
+                if (hasHost || !local) response = errorResponse(403, "Loopback Host required");
+                hasHost = true;
+            } else if (name == "origin" || name == "sec-fetch-site") {
+                // This API is for local native clients; browsers must not read or mutate the index.
+                response = errorResponse(403, "Browser requests are not allowed");
+            } else if (name == "transfer-encoding") {
+                response = errorResponse(400, "Transfer-Encoding is not supported");
+            } else if (name == "content-length") {
+                auto parsed = std::from_chars(value.data(), value.data() + value.size(), contentLength);
+                if (hasLength || parsed.ec != std::errc() || parsed.ptr != value.data() + value.size()) {
+                    response = errorResponse(400, "Invalid Content-Length");
+                } else if (contentLength > maxBody) {
+                    response = errorResponse(413, "Body too large");
+                }
+                hasLength = true;
+            }
+            if (!response.empty()) break;
+        }
+        if (response.empty() && !hasHost) response = errorResponse(400, "Host required");
+        if (response.empty()) {
+            size_t requestSize = headerEnd + 4 + contentLength;
+            while (raw.size() < requestSize && receive(requestSize - raw.size())) {}
+            if (raw.size() != requestSize) {
+                response = errorResponse(400, "Invalid body length");
+            } else {
+                try {
+                    response = route(parseRequest(raw));
+                } catch (const std::invalid_argument&) {
+                    response = errorResponse(400, "Invalid numeric value");
+                } catch (const std::out_of_range&) {
+                    response = errorResponse(400, "Numeric value out of range");
                 }
             }
         }
     }
-
-    auto req = parseRequest(raw);
-    std::string response = route(req);
 
     // Send response (may need multiple writes for large payloads)
     const char* data = response.data();
@@ -628,6 +692,8 @@ std::string HttpServer::jsonResponse(int status, const std::string& body) {
         case 200: statusText = "OK"; break;
         case 202: statusText = "Accepted"; break;
         case 400: statusText = "Bad Request"; break;
+        case 403: statusText = "Forbidden"; break;
+        case 413: statusText = "Payload Too Large"; break;
         case 404: statusText = "Not Found"; break;
         case 405: statusText = "Method Not Allowed"; break;
         case 500: statusText = "Internal Server Error"; break;

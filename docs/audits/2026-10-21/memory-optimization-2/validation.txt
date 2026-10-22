@@ -1,0 +1,14 @@
+Release fast regression: 12035 passed, 0 failed
+ASan focused: Passed=293 Failed=0
+TSan v6/CRC/concurrency focused: Passed=111 Failed=0
+Xcode Release: BUILD SUCCEEDED
+
+Broader TSan run (not a full pass):
+  --- Performance comparison ---
+    Old way (remove + updateByPath loop): 1155.59 ms
+    New way (batchRescanPrefix):           1030331.07 ms
+    Speedup: 0.0x
+    [FAIL] batchRescanPrefix is not slower than old way
+    [PASS] old way: liveRecordCount correct
+    [PASS] new way: liveRecordCount correct
+No ThreadSanitizer data-race warning appeared in that run.

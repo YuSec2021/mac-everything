@@ -1,0 +1,17 @@
+query,before_median_ms,after_median_ms,count,same_ordered_id_hash,before_mode,after_mode
+readme,1.91583,1.85446,10000,True,advanced-trigram,advanced-trigram
+config,3.49517,3.12296,10000,True,advanced-trigram,advanced-trigram
+*.swift,0.2325,0.247333,1145,True,advanced-trigram,advanced-trigram
+size:>1mb,1.93033,2.28292,10000,True,advanced-pure-filter-soa-gcd,advanced-pure-filter-soa-gcd
+type:folder,5.74942,5.77154,10000,True,advanced-pure-filter-soa-gcd,advanced-pure-filter-soa-gcd
+/Applications/,3.83879,4.15929,13,True,advanced-linear-gcd,advanced-linear-gcd
+MacEverything/readme,0.687083,0.8195,5,True,advanced-path-trigram,advanced-trigram
+site-packages/config,6.67979,2.30783,10000,True,advanced-trigram,advanced-trigram
+site-packages/a,39.4819,59.9287,10000,True,advanced-path-trigram,advanced-path-scan
+MacEverything/a,0.234375,51.1362,632,True,advanced-path-trigram,advanced-path-scan
+com.apple.Safari/a,1.01071,53.4621,3930,True,advanced-path-trigram,advanced-path-scan
+MacEverything/.swift,0.326792,0.266459,33,True,advanced-path-trigram,advanced-trigram
+my_product/a,53.5018,68.8584,10000,True,advanced-path-trigram,advanced-path-scan
+path:MacEverything ext:swift,0.032875,0.030667,81,True,advanced-ext-index,advanced-ext-index
+RareSegment/a | readme,230.379,50.5579,10000,True,advanced-linear-gcd,advanced-linear-gcd
+!MacEverything/a,211.421,52.2324,10000,True,advanced-linear-gcd,advanced-linear-gcd

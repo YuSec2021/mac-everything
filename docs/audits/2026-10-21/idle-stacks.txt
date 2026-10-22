@@ -1,0 +1,40 @@
+Analysis of sampling maceverything-daemon (pid 61350) every 10 milliseconds
+Process:         maceverything-daemon [61350]
+Path:            /Users/USER/*/maceverything-daemon
+Load Address:    0x1028b4000
+Identifier:      maceverything-daemon
+Version:         0
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  Python [61348]
+Target Type:     live task
+
+Date/Time:       2026-10-21 11:39:41.541 +0800
+Launch Time:     2026-10-21 11:39:19.088 +0800
+OS Version:      macOS 27.0.1 (26A434)
+Report Version:  7
+Analysis Tool:   /usr/bin/sample
+
+Physical footprint:         21.7M
+Physical footprint (peak):  21.8M
+Idle exit:                  untracked
+----
+
+Call graph:
+    184 Thread_31768804: Main Thread   DispatchQueue_<multiple>
+    + 184 thread_start  (in libsystem_pthread.dylib) + 8  [0x188a00cec]
+    +   184 _pthread_start  (in libsystem_pthread.dylib) + 136  [0x188a05d00]
+    +     184 std::__thread_proxy[abi:nqe220106]<std::tuple<std::unique_ptr<std::__thread_struct>, void (HttpServer::*)(), HttpServer*>>(void*)  (in maceverything-daemon) + 72  [0x1028d5f9c]
+    +       184 HttpServer::acceptLoop()  (in maceverything-daemon) + 108  [0x1028cedb0]
+    +         184 poll  (in libsystem_kernel.dylib) + 8  [0x1889c9760]
+    184 Thread_31768805
+      184 _dispatch_sig_thread  (in libdispatch.dylib) + 52  [0x1888581b8]
+        184 _dispatch_sigsuspend  (in libdispatch.dylib) + 48  [0x1888581e8]
+          184 __sigsuspend_nocancel  (in libsystem_kernel.dylib) + 8  [0x1889c85b0]
+
+Total number in stack (recursive counted multiple, when >=5):
+
+Sort by top of stack, same collapsed (when >= 5):
+        __sigsuspend_nocancel  (in libsystem_kernel.dylib)        184
+        poll  (in libsystem_kernel.dylib)        184
+

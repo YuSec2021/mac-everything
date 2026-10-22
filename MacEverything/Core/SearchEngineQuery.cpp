@@ -65,13 +65,13 @@ void SearchEngine::queryDirList(const ParsedQuery& pq,
         if (allFound && candidates.size() <= totalSize / 4) {
             for (uint32_t idx : candidates) {
                 if (types_[idx] != 2) continue; // must be directory
-                const char* nd = namePool_.data(idx);
-                uint16_t nl = namePool_.length(idx);
+                const char* nd = names_.lower().data(idx);
+                uint16_t nl = names_.lower().length(idx);
                 if (nl != dirName.size()) continue;
                 if (std::memcmp(nd, dirName.data(), nl) != 0) continue;
                 // Check path constraints
                 if (!pq.pathSegments.empty()) {
-                    std::string dirPath = lowerPathPool_.str(pathIndices_[idx]);
+                    std::string dirPath = pathPool_.lower().str(pathIndices_[idx]);
                     if (!pathSegmentsMatch(dirPath, pq.pathSegments)) continue;
                 }
                 dirIndices.push_back(idx);
@@ -80,12 +80,12 @@ void SearchEngine::queryDirList(const ParsedQuery& pq,
             // Fallback: linear scan for directories
             for (size_t i = 0; i < totalSize; i++) {
                 if (types_[i] != 2) continue;
-                const char* nd = namePool_.data(i);
-                uint16_t nl = namePool_.length(i);
+                const char* nd = names_.lower().data(i);
+                uint16_t nl = names_.lower().length(i);
                 if (nl != dirName.size()) continue;
                 if (std::memcmp(nd, dirName.data(), nl) != 0) continue;
                 if (!pq.pathSegments.empty()) {
-                    std::string dirPath = lowerPathPool_.str(pathIndices_[i]);
+                    std::string dirPath = pathPool_.lower().str(pathIndices_[i]);
                     if (!pathSegmentsMatch(dirPath, pq.pathSegments)) continue;
                 }
                 dirIndices.push_back(static_cast<uint32_t>(i));
@@ -95,12 +95,12 @@ void SearchEngine::queryDirList(const ParsedQuery& pq,
         // Short name or no trigram index — linear scan
         for (size_t i = 0; i < totalSize; i++) {
             if (types_[i] != 2) continue;
-            const char* nd = namePool_.data(i);
-            uint16_t nl = namePool_.length(i);
+            const char* nd = names_.lower().data(i);
+            uint16_t nl = names_.lower().length(i);
             if (nl != dirName.size()) continue;
             if (std::memcmp(nd, dirName.data(), nl) != 0) continue;
             if (!pq.pathSegments.empty()) {
-                std::string dirPath = lowerPathPool_.str(pathIndices_[i]);
+                std::string dirPath = pathPool_.lower().str(pathIndices_[i]);
                 if (!pathSegmentsMatch(dirPath, pq.pathSegments)) continue;
             }
             dirIndices.push_back(static_cast<uint32_t>(i));
@@ -117,10 +117,10 @@ void SearchEngine::queryDirList(const ParsedQuery& pq,
         std::string parentPath = pathPool_.str(pathIndices_[dirIdx]);
         std::string fullDirPath = parentPath;
         if (!fullDirPath.empty() && fullDirPath.back() != '/') fullDirPath += '/';
-        fullDirPath += std::string(namePool_.data(dirIdx), namePool_.length(dirIdx));
+        fullDirPath += std::string(names_.lower().data(dirIdx), names_.lower().length(dirIdx));
 
         // Look up this full path in pathLookup_ to find its pathPool index
-        auto it = pathLookup_.find(fullDirPath);
+        auto it = me::findPathRecord(pathLookup_, fullDirPath, [this](uint32_t i) { return pathPool_.view(i); });
         if (it == pathLookup_.end()) continue;
 
         uint32_t childPathIdx = it->second;
@@ -129,8 +129,8 @@ void SearchEngine::queryDirList(const ParsedQuery& pq,
         const auto& childRecords = pathIdxToRecords_[childPathIdx];
         for (uint32_t childIdx : childRecords) {
             if (types_[childIdx] == 0) continue; // skip tombstones
-            const char* nd = namePool_.data(childIdx);
-            uint16_t nl = namePool_.length(childIdx);
+            const char* nd = names_.lower().data(childIdx);
+            uint16_t nl = names_.lower().length(childIdx);
             uint8_t priority = 2; // children are all "contains" priority
             uint32_t pLen = static_cast<uint32_t>(pathPool_.length(pathIndices_[childIdx]) + 1 + nl);
             merged.push_back({childIdx, priority, pLen});
@@ -219,7 +219,8 @@ std::vector<uint32_t> SearchEngine::query(const std::string& keyword, uint32_t m
         auto beforeSort = std::chrono::steady_clock::now();
         auto cmp = [](const Match& a, const Match& b) {
             if (a.priority != b.priority) return a.priority < b.priority;
-            return a.pathLen < b.pathLen;
+            if (a.pathLen != b.pathLen) return a.pathLen < b.pathLen;
+            return a.idx < b.idx;
         };
         size_t resultCount = merged.size();
         if (maxResults > 0 && resultCount > maxResults) resultCount = maxResults;

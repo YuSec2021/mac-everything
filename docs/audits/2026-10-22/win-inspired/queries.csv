@@ -1,0 +1,17 @@
+query,before_median_ms,after_median_ms,count,ordered_hash_equal
+readme,6.15717,5.80233,10000,True
+config,11.2863,10.4999,10000,True
+*.swift,0.88375,0.911667,1145,True
+size:>1mb,2.52071,2.49825,10000,True
+type:folder,6.64304,2.09017,10000,True
+/Applications/,10.531,6.28263,13,True
+MacEverything/readme,5.13162,4.97438,5,True
+site-packages/config,10.1413,9.66867,10000,True
+site-packages/a,121.971,52.5577,10000,True
+MacEverything/a,112.592,40.3408,632,True
+com.apple.Safari/a,116.373,40.1457,3930,True
+MacEverything/.swift,0.949166,0.933292,33,True
+my_product/a,133.743,59.7886,10000,True
+path:MacEverything ext:swift,0.038084,0.040458,81,True
+RareSegment/a | readme,58.2044,58.8162,10000,True
+!MacEverything/a,61.3336,41.611,10000,True

@@ -1,0 +1,6 @@
+live=6381948 unique_paths=707177 path_postings_MiB=209.234
+"site-packages/a" unlimited_count_on=509053 unlimited_count_off=509726 unlimited_set_equal=0 unlimited_order_equal=0
+"MacEverything/a" unlimited_count_on=632 unlimited_count_off=716 unlimited_set_equal=0 unlimited_order_equal=0
+"com.apple.Safari/a" unlimited_count_on=3930 unlimited_count_off=4021 unlimited_set_equal=0 unlimited_order_equal=0
+"MacEverything/.swift" unlimited_count_on=33 unlimited_count_off=91 unlimited_set_equal=0 unlimited_order_equal=0
+"my_product/a" unlimited_count_on=622874 unlimited_count_off=623003 unlimited_set_equal=0 unlimited_order_equal=0

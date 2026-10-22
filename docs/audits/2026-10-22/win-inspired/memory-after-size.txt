@@ -1,0 +1,1 @@
+query=size:>=0 count=10000 hash=5675336516199877480 ms=1.00042 before_mib=1264.41 query_peak_mib=1266.77 after_mib=1266.77

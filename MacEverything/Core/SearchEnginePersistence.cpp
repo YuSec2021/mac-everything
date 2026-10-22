@@ -112,7 +112,7 @@ bool SearchEngine::saveToFile(const std::string& filePath, const IndexMetadata& 
     for (uint32_t i = 0; i < totalCount; i++) {
         if (types_[i] == 0) continue;
         FileRecord r;
-        r.name = origNamePool_.str(i);
+        r.name = names_.original().str(i);
         r.type = types_[i];
         r.size = sizes_[i];
         r.modTime = static_cast<time_t>(modTimes_[i]);

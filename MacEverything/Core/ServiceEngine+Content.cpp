@@ -28,7 +28,7 @@ void ServiceEngine::setupContentPersistence() {
     // Prune content entries whose fileIndex no longer points to a regular file
     // in the search engine.  This handles accumulated drift from search engine
     // compactions that remapped indices after the content base file was saved.
-    {
+    if (contentIndex->indexedFileCount() > 0) {
         uint32_t total = engine->recordCount();
         std::unordered_set<uint32_t> validFileIndices;
         validFileIndices.reserve(total);
@@ -67,6 +67,12 @@ void ServiceEngine::startContentIndexing() {
     auto engine = safeEngine();
     auto contentIndex = safeContentIndex();
     if (!engine || !contentIndex) return;
+
+    // Content search is opt-in: avoid enumerating millions of paths when disabled.
+    if (contentIndex->getExtensions().empty()) {
+        if (onContentIndexComplete) onContentIndexComplete(contentIndex->indexedFileCount());
+        return;
+    }
 
     isContentIndexing_.store(true, std::memory_order_relaxed);
     cancelContentIndexing_.store(false, std::memory_order_relaxed);

@@ -5,7 +5,7 @@
 #include <thread>
 
 // ---------------------------------------------------------------------------
-// v6 Flat SoA: loadRecordsV6, completePhase2, snapshotForV6
+// v6 Flat SoA: loadRecordsV6, completePhase2, readViewForV6
 // ---------------------------------------------------------------------------
 
 void SearchEngine::loadRecordsV6(StringPool&& origNamePool,
@@ -18,16 +18,19 @@ void SearchEngine::loadRecordsV6(StringPool&& origNamePool,
                                   std::vector<int64_t>&& modTimes,
                                   std::vector<uint64_t>&& inodes,
                                   std::vector<int32_t>&& devIds) {
-    std::unique_lock lock(mutex_);
+    auto lock = lockForMutation();
+    compactionGen_.fetch_add(1, std::memory_order_relaxed);
 
     uint32_t n = origNamePool.entryCount();
 
     // Install SoA columns directly (zero-copy from v6 file)
-    origNamePool_ = std::move(origNamePool);
-    namePool_ = std::move(namePool);
+    names_.load(origNamePool, namePool);
+    origNamePool = StringPool{};
+    namePool = StringPool{};
     pathIndices_ = std::move(pathIndices);
-    pathPool_ = std::move(pathPool);
-    lowerPathPool_ = std::move(lowerPathPool);
+    pathPool_ = DirectoryPool(pathPool);
+    pathPool = StringPool{};
+    lowerPathPool = StringPool{};
     types_ = std::move(types);
     sizes_ = std::move(sizes);
     modTimes_ = std::move(modTimes);
@@ -41,42 +44,17 @@ void SearchEngine::loadRecordsV6(StringPool&& origNamePool,
     lowerPathLookup_.reserve(pathPool_.entryCount());
     for (uint32_t i = 0; i < pathPool_.entryCount(); i++) {
         if (pathPool_.isLive(i)) {
-            pathLookup_[pathPool_.str(i)] = i;
-            lowerPathLookup_[lowerPathPool_.str(i)] = i;
+            me::setPathRecord(pathLookup_, pathPool_.view(i), i,
+                              [this](uint32_t j) { return pathPool_.view(j); });
+            me::setPathRecord(lowerPathLookup_, pathPool_.lower().view(i), i,
+                              [this](uint32_t j) { return pathPool_.lower().view(j); });
         }
     }
 
-    // Build pathIndex_ (lowercase full path -> record index)
-    // Parallelize full-path construction using string_view to avoid allocations
-    unsigned numThreads = std::thread::hardware_concurrency();
-    if (numThreads < 1) numThreads = 1;
-    if (numThreads > 32) numThreads = 32;
-    size_t chunkSize = (n + numThreads - 1) / numThreads;
-    std::vector<std::string> loweredPaths(n);
-    {
-        std::vector<std::thread> pathThreads;
-        pathThreads.reserve(numThreads);
-        for (unsigned t = 0; t < numThreads; t++) {
-            size_t start = t * chunkSize;
-            size_t end = std::min(start + chunkSize, static_cast<size_t>(n));
-            if (start >= end) break;
-            pathThreads.emplace_back([this, &loweredPaths, start, end] {
-                for (size_t i = start; i < end; i++) {
-                    uint32_t idx = static_cast<uint32_t>(i);
-                    loweredPaths[i] = makeFullPath(lowerPathPool_.view(pathIndices_[idx]),
-                                                   namePool_.view(idx));
-                }
-            });
-        }
-        for (auto& th : pathThreads) th.join();
-    }
-
-    // Insert into pathIndex_ and merge tombstone dedup (last-wins overwrites)
     pathIndex_.clear();
     pathIndex_.reserve(n);
-    for (uint32_t i = 0; i < n; i++) {
-        if (types_[i] == 0) continue;
-        pathIndex_[std::move(loweredPaths[i])] = i;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (types_[i] != 0) setPathRecord(lowerFullPath(i), i);
     }
 
     // Tombstone orphaned duplicates: records not in pathIndex_ as winners
@@ -123,7 +101,6 @@ void SearchEngine::completePhase2() {
     std::vector<uint8_t> snapTypes;
     std::vector<int64_t> snapModTimes;
     StringPool snapNamePool;
-    StringPool snapLowerPathPool;
     std::vector<uint32_t> snapPathIndices;
     uint32_t snapPathPoolSize;
     uint32_t snapSize;
@@ -131,8 +108,7 @@ void SearchEngine::completePhase2() {
         std::shared_lock lock(mutex_);
         snapTypes = types_;
         snapModTimes = modTimes_;
-        snapNamePool = namePool_;
-        snapLowerPathPool = lowerPathPool_;
+        snapNamePool = names_.lower().flatSnapshot();
         snapPathIndices = pathIndices_;
         snapPathPoolSize = pathPool_.entryCount();
         snapSize = static_cast<uint32_t>(types_.size());
@@ -140,19 +116,20 @@ void SearchEngine::completePhase2() {
 
     // Build all indices without holding any lock (~3s)
     auto trigramIndex = buildTrigramIndexFromData(snapTypes, snapNamePool);
-    auto pathTrigramIndex = buildPathTrigramIndexFromData(snapLowerPathPool);
-    auto pathIdxToRecords = buildPathIdxToRecordsFromData(snapTypes, snapPathIndices, snapPathPoolSize);
-    auto recentCache = buildRecentCacheFromData(snapTypes, snapModTimes, kRecentCacheSize);
     auto extensionIndex = buildExtensionIndexFromData(snapTypes, snapNamePool);
+    snapNamePool = StringPool{};
+    auto pathIdxToRecords = buildPathIdxToRecordsFromData(snapTypes, snapPathIndices, snapPathPoolSize);
+    std::vector<uint32_t>{}.swap(snapPathIndices);
+    auto recentCache = buildRecentCacheFromData(snapTypes, snapModTimes, kRecentCacheSize);
+    std::vector<int64_t>{}.swap(snapModTimes);
 
     LOG_INFO("SearchEngine", "Phase 2: indices built, swapping under lock...");
 
     // Swap under unique lock and replay mutations that occurred during build
     {
-        std::unique_lock lock(mutex_);
+        auto lock = lockForMutation();
 
         nameTrigramIndex_ = std::move(trigramIndex);
-        pathTrigramIndex_ = std::move(pathTrigramIndex);
         pathIdxToRecords_ = std::move(pathIdxToRecords);
         recentCache_ = std::move(recentCache);
         extensionIndex_ = std::move(extensionIndex);
@@ -163,8 +140,8 @@ void SearchEngine::completePhase2() {
         for (uint32_t i = snapSize; i < currentSize; i++) {
             if (types_[i] == 0) continue;
             // Add trigrams for this record
-            addTrigramsForRecord(i, namePool_.data(i), namePool_.length(i));
-            addPathTrigramsForRecord(i);
+            addTrigramsForRecord(i, names_.lower().data(i), names_.lower().length(i));
+            addPathRecord(i);
             addExtensionForRecord(i);
             addToRecentCache(i, static_cast<time_t>(modTimes_[i]));
             replayCount++;
@@ -177,7 +154,7 @@ void SearchEngine::completePhase2() {
                 // Was live in snapshot, now tombstoned — trigram was built, need to remove
                 // The trigram entry points at index i which is now tombstoned.
                 // Query-time type==0 check will filter it, but we can clean up explicitly.
-                removeTrigramsForRecord(i);  // Safe: namePool_[i] is tombstoned, this is a no-op
+                removeTrigramsForRecord(i);  // Safe: names_.lower()[i] is tombstoned, this is a no-op
             }
         }
 
@@ -188,19 +165,8 @@ void SearchEngine::completePhase2() {
     }
 }
 
-SearchEngine::V6Snapshot SearchEngine::snapshotForV6() const {
-    std::shared_lock lock(mutex_);
-    V6Snapshot snap;
-    snap.origNamePool = origNamePool_;
-    snap.namePool = namePool_;
-    snap.pathIndices = pathIndices_;
-    snap.pathPool = pathPool_;
-    snap.lowerPathPool = lowerPathPool_;
-    snap.types = types_;
-    snap.sizes = sizes_;
-    snap.modTimes = modTimes_;
-    snap.inodes = inodes_;
-    snap.devIds = devIds_;
-    snap.liveCount = liveCount_.load(std::memory_order_relaxed);
-    return snap;
+SearchEngine::V6ReadView SearchEngine::readViewForV6() const {
+    return {std::unique_lock(mutationGate_), std::shared_lock(mutex_), names_.original(), names_.lower(), pathIndices_,
+            pathPool_, pathPool_.lower(), types_, sizes_, modTimes_, inodes_, devIds_,
+            liveCount_.load(std::memory_order_relaxed)};
 }

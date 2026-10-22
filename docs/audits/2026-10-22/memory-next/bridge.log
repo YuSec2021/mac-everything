@@ -1,0 +1,725 @@
+clang++ -std=c++20 -O2 -Wall -Wextra -fno-access-control -fobjc-arc -I/opt/homebrew/opt/re2/include -I/opt/homebrew/include -framework CoreServices \
+		-framework AppKit -framework Foundation -L/opt/homebrew/opt/re2/lib -L/opt/homebrew/opt/abseil/lib -lre2 -labsl_raw_logging_internal -labsl_throw_delegate -IMacEverything/Core -IMacEverything/Bridge \
+		tests/test_query_snapshot.mm MacEverything/Bridge/MacSearchBridge.mm \
+		MacEverything/Bridge/MacSearchBridge+Content.mm MacEverything/Core/ContentIndex.cpp MacEverything/Core/ContentIndexPersistence.cpp MacEverything/Core/DirectoryScanner.cpp MacEverything/Core/FileSystemWatcher.cpp MacEverything/Core/FlatIndexWriter.cpp MacEverything/Core/HttpServer.cpp MacEverything/Core/IndexPersistence.cpp MacEverything/Core/IndexWAL.cpp MacEverything/Core/InstanceLock.cpp MacEverything/Core/Logger.cpp MacEverything/Core/PagedIndexWriter.cpp MacEverything/Core/QueryParser.cpp MacEverything/Core/SearchEngine.cpp MacEverything/Core/SearchEngineAdvancedQuery.cpp MacEverything/Core/SearchEngineIndex.cpp MacEverything/Core/SearchEnginePersistence.cpp MacEverything/Core/SearchEngineQuery.cpp MacEverything/Core/SearchEngineStructuredQuery.cpp MacEverything/Core/SearchEngineV6.cpp MacEverything/Core/ServiceEngine+Content.cpp MacEverything/Core/ServiceEngine+FSEvents.cpp MacEverything/Core/ServiceEngine.cpp MacEverything/Core/StringUtils.cpp -o /tmp/maceverything-query-snapshot-test
+In file included from tests/test_query_snapshot.mm:1:
+In file included from MacEverything/Bridge/MacSearchBridge_Internal.h:3:
+In file included from MacEverything/Core/ServiceEngine.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Bridge/MacSearchBridge.mm:1:
+In file included from MacEverything/Bridge/MacSearchBridge_Internal.h:3:
+In file included from MacEverything/Core/ServiceEngine.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+In file included from MacEverything/Bridge/MacSearchBridge.mm:5:
+In file included from MacEverything/Core/HighlightHintExtractor.h:3:
+In file included from MacEverything/Core/QueryParser.h:3:
+MacEverything/Core/QueryTokenizer.h:49:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   49 |                 tokens.push_back({TokenType::PIPE, "|"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:54:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   54 |                 tokens.push_back({TokenType::BANG, "!"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:59:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   59 |                 tokens.push_back({TokenType::LANGLE, "<"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:64:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   64 |                 tokens.push_back({TokenType::RANGLE, ">"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:78:58: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   78 |                 tokens.push_back({TokenType::QUOTED, text});
+      |                                                          ^
+MacEverything/Core/QueryTokenizer.h:127:56: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  127 |                 tokens.push_back({TokenType::WORD, word});
+      |                                                        ^
+MacEverything/Core/QueryTokenizer.h:131:45: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  131 |         tokens.push_back({TokenType::END, ""});
+      |                                             ^
+11 warnings generated.
+In file included from MacEverything/Bridge/MacSearchBridge+Content.mm:1:
+In file included from MacEverything/Bridge/MacSearchBridge_Internal.h:3:
+In file included from MacEverything/Core/ServiceEngine.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+MacEverything/Core/ContentIndex.cpp:584:13: warning: unused function 'writeU32' [-Wunused-function]
+  584 | static bool writeU32(FILE* f, uint32_t v) {
+      |             ^~~~~~~~
+MacEverything/Core/ContentIndex.cpp:588:13: warning: unused function 'writeU64' [-Wunused-function]
+  588 | static bool writeU64(FILE* f, uint64_t v) {
+      |             ^~~~~~~~
+2 warnings generated.
+In file included from MacEverything/Core/FlatIndexWriter.cpp:1:
+In file included from MacEverything/Core/FlatIndexWriter.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+MacEverything/Core/FlatIndexWriter.cpp:330:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  330 |         ok = ok && writeMetadataSection(f, meta, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:331:53: note: uninitialized use occurs here
+  331 |         fillSection(10, kSectionMetadataKV, offset, size, crc);
+      |                                                     ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:330:14: note: remove the '&&' if its condition is always true
+  330 |         ok = ok && writeMetadataSection(f, meta, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:329:22: note: initialize the variable 'size' to silence this warning
+  329 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:330:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  330 |         ok = ok && writeMetadataSection(f, meta, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:331:59: note: uninitialized use occurs here
+  331 |         fillSection(10, kSectionMetadataKV, offset, size, crc);
+      |                                                           ^~~
+MacEverything/Core/FlatIndexWriter.cpp:330:14: note: remove the '&&' if its condition is always true
+  330 |         ok = ok && writeMetadataSection(f, meta, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:329:27: note: initialize the variable 'crc' to silence this warning
+  329 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:318:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  318 |         ok = ok && writeArraySection(f, snap.devIds, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:319:48: note: uninitialized use occurs here
+  319 |         fillSection(9, kSectionDevIds, offset, size, crc);
+      |                                                ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:318:14: note: remove the '&&' if its condition is always true
+  318 |         ok = ok && writeArraySection(f, snap.devIds, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:317:22: note: initialize the variable 'size' to silence this warning
+  317 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:318:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  318 |         ok = ok && writeArraySection(f, snap.devIds, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:319:54: note: uninitialized use occurs here
+  319 |         fillSection(9, kSectionDevIds, offset, size, crc);
+      |                                                      ^~~
+MacEverything/Core/FlatIndexWriter.cpp:318:14: note: remove the '&&' if its condition is always true
+  318 |         ok = ok && writeArraySection(f, snap.devIds, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:317:27: note: initialize the variable 'crc' to silence this warning
+  317 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:310:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  310 |         ok = ok && writeArraySection(f, snap.inodes, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:311:48: note: uninitialized use occurs here
+  311 |         fillSection(8, kSectionInodes, offset, size, crc);
+      |                                                ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:310:14: note: remove the '&&' if its condition is always true
+  310 |         ok = ok && writeArraySection(f, snap.inodes, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:309:22: note: initialize the variable 'size' to silence this warning
+  309 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:310:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  310 |         ok = ok && writeArraySection(f, snap.inodes, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:311:54: note: uninitialized use occurs here
+  311 |         fillSection(8, kSectionInodes, offset, size, crc);
+      |                                                      ^~~
+MacEverything/Core/FlatIndexWriter.cpp:310:14: note: remove the '&&' if its condition is always true
+  310 |         ok = ok && writeArraySection(f, snap.inodes, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:309:27: note: initialize the variable 'crc' to silence this warning
+  309 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:302:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  302 |         ok = ok && writeArraySection(f, snap.modTimes, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:303:50: note: uninitialized use occurs here
+  303 |         fillSection(7, kSectionModTimes, offset, size, crc);
+      |                                                  ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:302:14: note: remove the '&&' if its condition is always true
+  302 |         ok = ok && writeArraySection(f, snap.modTimes, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:301:22: note: initialize the variable 'size' to silence this warning
+  301 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:302:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  302 |         ok = ok && writeArraySection(f, snap.modTimes, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:303:56: note: uninitialized use occurs here
+  303 |         fillSection(7, kSectionModTimes, offset, size, crc);
+      |                                                        ^~~
+MacEverything/Core/FlatIndexWriter.cpp:302:14: note: remove the '&&' if its condition is always true
+  302 |         ok = ok && writeArraySection(f, snap.modTimes, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:301:27: note: initialize the variable 'crc' to silence this warning
+  301 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:294:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  294 |         ok = ok && writeArraySection(f, snap.sizes, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:295:47: note: uninitialized use occurs here
+  295 |         fillSection(6, kSectionSizes, offset, size, crc);
+      |                                               ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:294:14: note: remove the '&&' if its condition is always true
+  294 |         ok = ok && writeArraySection(f, snap.sizes, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:293:22: note: initialize the variable 'size' to silence this warning
+  293 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:294:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  294 |         ok = ok && writeArraySection(f, snap.sizes, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:295:53: note: uninitialized use occurs here
+  295 |         fillSection(6, kSectionSizes, offset, size, crc);
+      |                                                     ^~~
+MacEverything/Core/FlatIndexWriter.cpp:294:14: note: remove the '&&' if its condition is always true
+  294 |         ok = ok && writeArraySection(f, snap.sizes, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:293:27: note: initialize the variable 'crc' to silence this warning
+  293 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:286:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  286 |         ok = ok && writeArraySection(f, snap.types, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:287:47: note: uninitialized use occurs here
+  287 |         fillSection(5, kSectionTypes, offset, size, crc);
+      |                                               ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:286:14: note: remove the '&&' if its condition is always true
+  286 |         ok = ok && writeArraySection(f, snap.types, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:285:22: note: initialize the variable 'size' to silence this warning
+  285 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:286:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  286 |         ok = ok && writeArraySection(f, snap.types, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:287:53: note: uninitialized use occurs here
+  287 |         fillSection(5, kSectionTypes, offset, size, crc);
+      |                                                     ^~~
+MacEverything/Core/FlatIndexWriter.cpp:286:14: note: remove the '&&' if its condition is always true
+  286 |         ok = ok && writeArraySection(f, snap.types, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:285:27: note: initialize the variable 'crc' to silence this warning
+  285 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:278:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  278 |         ok = ok && writeArraySection(f, snap.pathIndices, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:279:53: note: uninitialized use occurs here
+  279 |         fillSection(4, kSectionPathIndices, offset, size, crc);
+      |                                                     ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:278:14: note: remove the '&&' if its condition is always true
+  278 |         ok = ok && writeArraySection(f, snap.pathIndices, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:277:22: note: initialize the variable 'size' to silence this warning
+  277 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:278:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  278 |         ok = ok && writeArraySection(f, snap.pathIndices, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:279:59: note: uninitialized use occurs here
+  279 |         fillSection(4, kSectionPathIndices, offset, size, crc);
+      |                                                           ^~~
+MacEverything/Core/FlatIndexWriter.cpp:278:14: note: remove the '&&' if its condition is always true
+  278 |         ok = ok && writeArraySection(f, snap.pathIndices, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:277:27: note: initialize the variable 'crc' to silence this warning
+  277 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:270:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  270 |         ok = ok && writeStringPoolSection(f, snap.lowerPathPool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:271:55: note: uninitialized use occurs here
+  271 |         fillSection(3, kSectionLowerPathPool, offset, size, crc);
+      |                                                       ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:270:14: note: remove the '&&' if its condition is always true
+  270 |         ok = ok && writeStringPoolSection(f, snap.lowerPathPool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:269:22: note: initialize the variable 'size' to silence this warning
+  269 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:270:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  270 |         ok = ok && writeStringPoolSection(f, snap.lowerPathPool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:271:61: note: uninitialized use occurs here
+  271 |         fillSection(3, kSectionLowerPathPool, offset, size, crc);
+      |                                                             ^~~
+MacEverything/Core/FlatIndexWriter.cpp:270:14: note: remove the '&&' if its condition is always true
+  270 |         ok = ok && writeStringPoolSection(f, snap.lowerPathPool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:269:27: note: initialize the variable 'crc' to silence this warning
+  269 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:262:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  262 |         ok = ok && writeStringPoolSection(f, snap.pathPool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:263:50: note: uninitialized use occurs here
+  263 |         fillSection(2, kSectionPathPool, offset, size, crc);
+      |                                                  ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:262:14: note: remove the '&&' if its condition is always true
+  262 |         ok = ok && writeStringPoolSection(f, snap.pathPool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:261:22: note: initialize the variable 'size' to silence this warning
+  261 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:262:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  262 |         ok = ok && writeStringPoolSection(f, snap.pathPool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:263:56: note: uninitialized use occurs here
+  263 |         fillSection(2, kSectionPathPool, offset, size, crc);
+      |                                                        ^~~
+MacEverything/Core/FlatIndexWriter.cpp:262:14: note: remove the '&&' if its condition is always true
+  262 |         ok = ok && writeStringPoolSection(f, snap.pathPool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:261:27: note: initialize the variable 'crc' to silence this warning
+  261 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:254:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  254 |         ok = ok && writeStringPoolSection(f, snap.namePool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:255:52: note: uninitialized use occurs here
+  255 |         fillSection(1, kSectionNamesLower, offset, size, crc);
+      |                                                    ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:254:14: note: remove the '&&' if its condition is always true
+  254 |         ok = ok && writeStringPoolSection(f, snap.namePool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:253:22: note: initialize the variable 'size' to silence this warning
+  253 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:254:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  254 |         ok = ok && writeStringPoolSection(f, snap.namePool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:255:58: note: uninitialized use occurs here
+  255 |         fillSection(1, kSectionNamesLower, offset, size, crc);
+      |                                                          ^~~
+MacEverything/Core/FlatIndexWriter.cpp:254:14: note: remove the '&&' if its condition is always true
+  254 |         ok = ok && writeStringPoolSection(f, snap.namePool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:253:27: note: initialize the variable 'crc' to silence this warning
+  253 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+MacEverything/Core/FlatIndexWriter.cpp:246:14: warning: variable 'size' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  246 |         ok = ok && writeStringPoolSection(f, snap.origNamePool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:247:51: note: uninitialized use occurs here
+  247 |         fillSection(0, kSectionNamesOrig, offset, size, crc);
+      |                                                   ^~~~
+MacEverything/Core/FlatIndexWriter.cpp:246:14: note: remove the '&&' if its condition is always true
+  246 |         ok = ok && writeStringPoolSection(f, snap.origNamePool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:245:22: note: initialize the variable 'size' to silence this warning
+  245 |         uint32_t size, crc;
+      |                      ^
+      |                       = 0
+MacEverything/Core/FlatIndexWriter.cpp:246:14: warning: variable 'crc' is used uninitialized whenever '&&' condition is false [-Wsometimes-uninitialized]
+  246 |         ok = ok && writeStringPoolSection(f, snap.origNamePool, size, crc);
+      |              ^~
+MacEverything/Core/FlatIndexWriter.cpp:247:57: note: uninitialized use occurs here
+  247 |         fillSection(0, kSectionNamesOrig, offset, size, crc);
+      |                                                         ^~~
+MacEverything/Core/FlatIndexWriter.cpp:246:14: note: remove the '&&' if its condition is always true
+  246 |         ok = ok && writeStringPoolSection(f, snap.origNamePool, size, crc);
+      |              ^~~~~
+MacEverything/Core/FlatIndexWriter.cpp:245:27: note: initialize the variable 'crc' to silence this warning
+  245 |         uint32_t size, crc;
+      |                           ^
+      |                            = 0
+26 warnings generated.
+In file included from MacEverything/Core/HttpServer.cpp:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Core/IndexPersistence.cpp:1:
+In file included from MacEverything/Core/IndexPersistence.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+MacEverything/Core/IndexPersistence.cpp:15:7: warning: field 'walPath_' will be initialized after field 'pagedWriter_' [-Wreorder-ctor]
+   14 |     , basePath_(basePath)
+      |       ~~~~~~~~~~~~~~~~~~~
+      |       pagedWriter_(std::make_unique<PagedIndexWriter>(pagesPath, ptablePath))
+   15 |     , walPath_(walPath)
+      |       ^~~~~~~~~~~~~~~~~
+      |       flatWriter_(std::make_unique<FlatIndexWriter>(v6Path))
+   16 |     , pagedWriter_(std::make_unique<PagedIndexWriter>(pagesPath, ptablePath))
+      |       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |       basePath_(basePath)
+   17 |     , flatWriter_(std::make_unique<FlatIndexWriter>(v6Path))
+      |       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+      |       v6Path_(v6Path)
+   18 |     , v6Path_(v6Path)
+      |       ~~~~~~~~~~~~~~~
+      |       walPath_(walPath)
+5 warnings generated.
+In file included from MacEverything/Core/PagedIndexWriter.cpp:1:
+In file included from MacEverything/Core/PagedIndexWriter.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+MacEverything/Core/PagedIndexWriter.cpp:453:26: warning: unused parameter 'idx' [-Wunused-parameter]
+  453 |             [&](uint32_t idx, const FileRecord& r, uint32_t pathIdx,
+      |                          ^
+MacEverything/Core/PagedIndexWriter.cpp:519:26: warning: unused parameter 'idx' [-Wunused-parameter]
+  519 |             [&](uint32_t idx, const FileRecord& r, uint32_t pathIdx,
+      |                          ^
+MacEverything/Core/PagedIndexWriter.cpp:31:13: warning: unused function 'appendString' [-Wunused-function]
+   31 | static void appendString(std::vector<uint8_t>& buf, const std::string& s) {
+      |             ^~~~~~~~~~~~
+7 warnings generated.
+In file included from MacEverything/Core/QueryParser.cpp:1:
+In file included from MacEverything/Core/QueryParser.h:2:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+In file included from MacEverything/Core/QueryParser.cpp:1:
+In file included from MacEverything/Core/QueryParser.h:3:
+MacEverything/Core/QueryTokenizer.h:49:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   49 |                 tokens.push_back({TokenType::PIPE, "|"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:54:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   54 |                 tokens.push_back({TokenType::BANG, "!"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:59:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   59 |                 tokens.push_back({TokenType::LANGLE, "<"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:64:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   64 |                 tokens.push_back({TokenType::RANGLE, ">"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:78:58: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   78 |                 tokens.push_back({TokenType::QUOTED, text});
+      |                                                          ^
+MacEverything/Core/QueryTokenizer.h:127:56: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  127 |                 tokens.push_back({TokenType::WORD, word});
+      |                                                        ^
+MacEverything/Core/QueryTokenizer.h:131:45: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  131 |         tokens.push_back({TokenType::END, ""});
+      |                                             ^
+11 warnings generated.
+In file included from MacEverything/Core/SearchEngine.cpp:1:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+MacEverything/Core/SearchEngine.cpp:565:16: warning: unused variable 'cdOrigNamePool' [-Wunused-variable]
+  565 |     const auto cdOrigNamePool = cdNames.original();
+      |                ^~~~~~~~~~~~~~
+5 warnings generated.
+In file included from MacEverything/Core/SearchEngineAdvancedQuery.cpp:1:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+In file included from MacEverything/Core/SearchEngineAdvancedQuery.cpp:3:
+In file included from MacEverything/Core/QueryParser.h:3:
+MacEverything/Core/QueryTokenizer.h:49:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   49 |                 tokens.push_back({TokenType::PIPE, "|"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:54:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   54 |                 tokens.push_back({TokenType::BANG, "!"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:59:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   59 |                 tokens.push_back({TokenType::LANGLE, "<"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:64:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   64 |                 tokens.push_back({TokenType::RANGLE, ">"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:78:58: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   78 |                 tokens.push_back({TokenType::QUOTED, text});
+      |                                                          ^
+MacEverything/Core/QueryTokenizer.h:127:56: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  127 |                 tokens.push_back({TokenType::WORD, word});
+      |                                                        ^
+MacEverything/Core/QueryTokenizer.h:131:45: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  131 |         tokens.push_back({TokenType::END, ""});
+      |                                             ^
+MacEverything/Core/SearchEngineAdvancedQuery.cpp:420:13: warning: function 'collectTerms' is not needed and will not be emitted [-Wunneeded-internal-declaration]
+  420 | static void collectTerms(const QueryNode& node, std::vector<std::string>& terms) {
+      |             ^~~~~~~~~~~~
+12 warnings generated.
+In file included from MacEverything/Core/SearchEngineIndex.cpp:1:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Core/SearchEnginePersistence.cpp:1:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Core/SearchEngineQuery.cpp:1:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+In file included from MacEverything/Core/SearchEngineQuery.cpp:5:
+MacEverything/Core/QueryTokenizer.h:49:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   49 |                 tokens.push_back({TokenType::PIPE, "|"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:54:55: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   54 |                 tokens.push_back({TokenType::BANG, "!"});
+      |                                                       ^
+MacEverything/Core/QueryTokenizer.h:59:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   59 |                 tokens.push_back({TokenType::LANGLE, "<"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:64:57: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   64 |                 tokens.push_back({TokenType::RANGLE, ">"});
+      |                                                         ^
+MacEverything/Core/QueryTokenizer.h:78:58: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+   78 |                 tokens.push_back({TokenType::QUOTED, text});
+      |                                                          ^
+MacEverything/Core/QueryTokenizer.h:127:56: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  127 |                 tokens.push_back({TokenType::WORD, word});
+      |                                                        ^
+MacEverything/Core/QueryTokenizer.h:131:45: warning: missing field 'filterName' initializer [-Wmissing-field-initializers]
+  131 |         tokens.push_back({TokenType::END, ""});
+      |                                             ^
+MacEverything/Core/SearchEngineQuery.cpp:132:25: warning: unused variable 'nd' [-Wunused-variable]
+  132 |             const char* nd = names_.lower().data(childIdx);
+      |                         ^~
+12 warnings generated.
+In file included from MacEverything/Core/SearchEngineStructuredQuery.cpp:1:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Core/SearchEngineV6.cpp:1:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Core/ServiceEngine+Content.cpp:1:
+In file included from MacEverything/Core/ServiceEngine.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Core/ServiceEngine+FSEvents.cpp:1:
+In file included from MacEverything/Core/ServiceEngine.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+In file included from MacEverything/Core/ServiceEngine.cpp:1:
+In file included from MacEverything/Core/ServiceEngine.h:2:
+In file included from MacEverything/Core/SearchEngine.h:26:
+In file included from MacEverything/Core/QueryAST.h:8:
+MacEverything/Core/CompiledGlob.h:89:65: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   89 |         return {CompiledGlob::SUFFIX, pattern.substr(1), pattern};
+      |                                                                 ^
+MacEverything/Core/CompiledGlob.h:95:85: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+   95 |         return {CompiledGlob::PREFIX, pattern.substr(0, pattern.size() - 1), pattern};
+      |                                                                                     ^
+MacEverything/Core/CompiledGlob.h:102:57: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  102 |             return {CompiledGlob::CONTAINS, mid, pattern};
+      |                                                         ^
+MacEverything/Core/CompiledGlob.h:108:54: warning: missing field 'segments' initializer [-Wmissing-field-initializers]
+  108 |         return {CompiledGlob::EXACT, pattern, pattern};
+      |                                                      ^
+4 warnings generated.
+/tmp/maceverything-query-snapshot-test
+Snapshot bridge: paging, ordering, bounds, deletion, compaction and engine lifetime passed

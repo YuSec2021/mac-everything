@@ -595,6 +595,8 @@
 				);
 				OTHER_LDFLAGS = (
 					"-lre2",
+					"-labsl_raw_logging_internal",
+					"-labsl_throw_delegate",
 				);
 			};
 			name = Debug;
@@ -628,6 +630,8 @@
 				);
 				OTHER_LDFLAGS = (
 					"-lre2",
+					"-labsl_raw_logging_internal",
+					"-labsl_throw_delegate",
 				);
 			};
 			name = Release;

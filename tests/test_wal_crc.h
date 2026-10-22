@@ -24,6 +24,24 @@ inline void runWalCrcTests() {
         check(crc == 0x00000000u, "15.2 CRC32 empty data = 0");
     }
 
+    {
+        const std::string known = "123456789";
+        uint32_t split = IndexWAL::crc32(known.data(), 4);
+        split = IndexWAL::crc32(nullptr, 0, split);
+        split = IndexWAL::crc32(known.data() + 4, known.size() - 4, split);
+        check(split == 0xCBF43926u, "15.2a chained CRC matches known checksum");
+        std::string data(256 * 1024, '\0');
+        for (size_t i = 0; i < data.size(); ++i) data[i] = static_cast<char>(i * 37);
+        const auto expected = IndexWAL::crc32(data.data(), data.size());
+        for (size_t chunk : {size_t{1}, size_t{7}, size_t{4096}, size_t{65537}}) {
+            uint32_t crc = 0;
+            for (size_t pos = 0; pos < data.size(); pos += chunk) {
+                crc = IndexWAL::crc32(data.data() + pos, std::min(chunk, data.size() - pos), crc);
+            }
+            check(crc == expected, "15.2b chained CRC preserves byte stream across chunk sizes");
+        }
+    }
+
     // --- Test 15.3: IndexWAL write + read with CRC roundtrip ---
     {
         auto walPath = (tmpDir / "test_crc.wal").string();

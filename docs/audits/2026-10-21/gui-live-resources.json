@@ -1,0 +1,75 @@
+{
+  "pid": 62745,
+  "elapsed_seconds": 30.015933500000003,
+  "average_cpu_percent": 0.22739825277577744,
+  "read_mib": 0.0,
+  "write_mib": 0.0625,
+  "samples": [
+    {
+      "interval_seconds": 5.003628708,
+      "cpu_percent": 0.14224676560458652,
+      "cpu_seconds": 187.95164975,
+      "rss_mib": 5359.0,
+      "footprint_mib": 4423.52091217041,
+      "read_bytes": 18537607168,
+      "write_bytes": 22181629952,
+      "idle_wakeups": 18775,
+      "interrupt_wakeups": 36432
+    },
+    {
+      "interval_seconds": 5.001133333,
+      "cpu_percent": 0.3929326019699507,
+      "cpu_seconds": 187.97130083333334,
+      "rss_mib": 5359.0,
+      "footprint_mib": 4423.52091217041,
+      "read_bytes": 18537607168,
+      "write_bytes": 22181629952,
+      "idle_wakeups": 18775,
+      "interrupt_wakeups": 36432
+    },
+    {
+      "interval_seconds": 5.0004972500000004,
+      "cpu_percent": 0.41601862694756586,
+      "cpu_seconds": 187.99210383333335,
+      "rss_mib": 5359.0,
+      "footprint_mib": 4423.52091217041,
+      "read_bytes": 18537607168,
+      "write_bytes": 22181662720,
+      "idle_wakeups": 18775,
+      "interrupt_wakeups": 36432
+    },
+    {
+      "interval_seconds": 5.001892083999998,
+      "cpu_percent": 0.15745291717087248,
+      "cpu_seconds": 187.99997945833334,
+      "rss_mib": 5359.0,
+      "footprint_mib": 4423.52091217041,
+      "read_bytes": 18537607168,
+      "write_bytes": 22181662720,
+      "idle_wakeups": 18775,
+      "interrupt_wakeups": 36432
+    },
+    {
+      "interval_seconds": 5.0038757080000025,
+      "cpu_percent": 0.13503199774775446,
+      "cpu_seconds": 188.00673629166667,
+      "rss_mib": 5359.0,
+      "footprint_mib": 4423.52091217041,
+      "read_bytes": 18537607168,
+      "write_bytes": 22181695488,
+      "idle_wakeups": 18775,
+      "interrupt_wakeups": 36432
+    },
+    {
+      "interval_seconds": 5.004906417000001,
+      "cpu_percent": 0.12091468176354027,
+      "cpu_seconds": 188.01278795833335,
+      "rss_mib": 5359.0,
+      "footprint_mib": 4423.52091217041,
+      "read_bytes": 18537607168,
+      "write_bytes": 22181695488,
+      "idle_wakeups": 18775,
+      "interrupt_wakeups": 36432
+    }
+  ]
+}

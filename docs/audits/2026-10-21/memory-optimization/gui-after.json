@@ -1,0 +1,48 @@
+{
+  "pid": 69133,
+  "samples": [
+    {
+      "monotonic": 0.0122525,
+      "cpu_seconds": 6.705068,
+      "rss_mib": 2806.3125,
+      "footprint_mib": 2234.5343170166016
+    },
+    {
+      "monotonic": 5.016867041,
+      "cpu_seconds": 6.725197208333333,
+      "rss_mib": 2808.359375,
+      "footprint_mib": 2236.5499420166016
+    },
+    {
+      "monotonic": 10.026946833,
+      "cpu_seconds": 6.742660333333333,
+      "rss_mib": 2808.4375,
+      "footprint_mib": 2236.8780670166016
+    },
+    {
+      "monotonic": 15.033641166,
+      "cpu_seconds": 6.770588958333333,
+      "rss_mib": 2808.78125,
+      "footprint_mib": 2236.8311920166016
+    },
+    {
+      "monotonic": 20.043904583,
+      "cpu_seconds": 6.794276333333333,
+      "rss_mib": 2808.640625,
+      "footprint_mib": 2236.7530670166016
+    },
+    {
+      "monotonic": 25.0504355,
+      "cpu_seconds": 6.818542541666667,
+      "rss_mib": 2817.3125,
+      "footprint_mib": 2245.424964904785
+    },
+    {
+      "monotonic": 30.058592083,
+      "cpu_seconds": 6.827889041666667,
+      "rss_mib": 2817.5625,
+      "footprint_mib": 2245.674964904785
+    }
+  ],
+  "average_cpu_percent": 0.40877206132676064
+}

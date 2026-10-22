@@ -1,3 +1,4 @@
+#include <future>
 #pragma once
 // v6 Flat SoA persistence tests
 // Verifies v6 format: single-file columnar layout, CRC integrity,
@@ -879,6 +880,38 @@ static void testV6InodeDevIdRoundtrip() {
     fs::remove_all(tmpDir);
 }
 
+static void testV6ReadViewConcurrency() {
+    SearchEngine engine;
+    engine.addRecord({"readme.txt", "/view", 1, 100, 1000});
+    auto view = engine.readViewForV6();
+    std::promise<void> started;
+    auto attempt = started.get_future();
+    std::thread mutation([&] {
+        started.set_value();
+        engine.addRecord({"added.txt", "/view", 1, 200, 2000});
+    });
+    attempt.wait();
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    std::promise<bool> queried;
+    auto result = queried.get_future();
+    std::thread query([&] { queried.set_value(engine.query("readme", 10).size() == 1); });
+    const bool finished = result.wait_for(std::chrono::seconds(1)) == std::future_status::ready;
+    check(finished, "V6-13: queued mutation does not block queries during serialization");
+    check(view.types.size() == 1 && view.origNamePool.view(0) == "readme.txt",
+          "V6-13: borrowed columns remain stable while mutation waits");
+    view.lock.unlock();
+    view.mutationGate.unlock();
+    mutation.join();
+    query.join();
+    check(result.get(), "V6-13: concurrent query returns correct results");
+    check(engine.indexForPath("/view/added.txt") != UINT32_MAX,
+          "V6-13: queued mutation completes after serialization releases columns");
+    FlatIndexWriter failing("/dev/null/unwritable.v6");
+    check(!failing.fullRewrite(engine, {}), "V6-13: unwritable destination fails cleanly");
+    engine.addRecord({"after-failure.txt", "/view", 1, 300, 3000});
+    check(engine.liveRecordCount() == 3, "V6-13: write failure releases both locks");
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Runner
 // ─────────────────────────────────────────────────────────────────────────────
@@ -897,6 +930,7 @@ static void runFlatPersistenceV6Tests() {
     testV6PathPoolIntegrity();         // Test 10
     testV6Phase2ConcurrentQueries();   // Test 11
     testV6InodeDevIdRoundtrip();       // Test 12
+    testV6ReadViewConcurrency();       // Test 13
 
     std::cout << "\n";
 }
