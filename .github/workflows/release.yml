@@ -1,0 +1,208 @@
+# Builds, signs and publishes MacEverything. See docs/release.md for the trigger,
+# the optional signing/notarization secrets and the artifacts it produces.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without the leading v, e.g. 1.2.1 or 0.0.0-ci-test"
+        required: true
+      publish:
+        description: "Create a GitHub Release (tag v<version> on the selected commit). Off = build artifacts only."
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    # Homebrew bottles target the runner's macOS; bundle_dylibs.sh raises
+    # LSMinimumSystemVersion to match, so this image sets the app's minimum OS.
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      APP_PATH: build/Release/MacEverything.app
+      HAS_CERT: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' }}
+      HAS_NOTARY: ${{ secrets.NOTARY_APPLE_ID != '' && secrets.NOTARY_TEAM_ID != '' && secrets.NOTARY_APP_PASSWORD != '' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the build number is the commit count
+
+      - name: Resolve version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PUBLISH: ${{ inputs.publish }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == push ]]; then
+            tag="$GITHUB_REF_NAME"; version="${tag#v}"; publish=true
+          else
+            version="${INPUT_VERSION#v}"; tag="v$version"; publish="$INPUT_PUBLISH"
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$version' is not a version like 1.2.0 or 1.2.0-beta.1"; exit 1
+          fi
+          short="${version%%-*}"   # CFBundleShortVersionString allows digits and dots only
+          build="$(git rev-list --count HEAD)"
+          prerelease=false; [[ "$version" == *-* ]] && prerelease=true
+          {
+            echo "tag=$tag"; echo "version=$version"; echo "short=$short"
+            echo "build=$build"; echo "prerelease=$prerelease"; echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          echo "tag=$tag version=$version short=$short build=$build prerelease=$prerelease publish=$publish"
+
+      - name: Install re2 and abseil
+        run: |
+          brew install re2 abseil
+          echo "re2 $(brew list --versions re2), abseil $(brew list --versions abseil)"
+
+      - name: Test (make test-fast)
+        # --fast runs Parts 3, 3b-3e, 5, 7-22 plus the bridge lint. Part 4 (FSEvents
+        # integration) belongs to --slow and is deliberately not run here: hosted runners
+        # may not deliver FSEvents, and a flaky miss there should not block a release.
+        run: make test-fast
+
+      - name: Stamp version into Info.plist
+        run: |
+          plutil -replace CFBundleShortVersionString -string "${{ steps.version.outputs.short }}" MacEverything/Info.plist
+          plutil -replace CFBundleVersion -string "${{ steps.version.outputs.build }}" MacEverything/Info.plist
+
+      - name: Build (make app)
+        # Xcode's own signing is replaced by scripts/release/sign_app.sh after the
+        # Homebrew dylibs are bundled, so build with a local ad-hoc identity. arm64 only:
+        # the bundled Homebrew dylibs are arm64, so a universal binary could not load on Intel.
+        run: |
+          make app XCODE_DEVELOPER_DIR="$(xcode-select -p)" \
+            XCODEBUILD_FLAGS="ARCHS=arm64 ONLY_ACTIVE_ARCH=NO CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="
+
+      - name: Bundle Homebrew dylibs
+        run: scripts/release/bundle_dylibs.sh "$APP_PATH"
+
+      - name: Import Developer ID certificate
+        if: env.HAS_CERT == 'true'
+        env:
+          P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password="$(uuidgen)"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          if [[ -z "$SIGNING_IDENTITY" ]]; then
+            SIGNING_IDENTITY="$(security find-identity -v -p codesigning "$keychain" \
+              | awk -F'"' '/Developer ID Application/ {print $2; exit}')"
+          fi
+          if [[ -z "$SIGNING_IDENTITY" ]]; then
+            echo "::error::No 'Developer ID Application' identity in MACOS_CERTIFICATE_P12_BASE64"; exit 1
+          fi
+          echo "SIGN_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Sign app
+        run: scripts/release/sign_app.sh "$APP_PATH" MacEverything/MacEverything.entitlements
+
+      - name: Notarize and staple app
+        if: env.HAS_CERT == 'true' && env.HAS_NOTARY == 'true'
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+        run: |
+          ditto -c -k --keepParent "$APP_PATH" "$RUNNER_TEMP/notarize.zip"
+          scripts/release/notarize.sh "$RUNNER_TEMP/notarize.zip"
+          xcrun stapler staple "$APP_PATH"
+
+      - name: Verify app
+        run: scripts/release/verify_app.sh "$APP_PATH" "${{ steps.version.outputs.short }}"
+
+      - name: Package zip and DMG
+        id: package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          ditto -c -k --keepParent "$APP_PATH" "dist/MacEverything-$VERSION.zip"
+          # hdiutil on hosted runners occasionally fails with "Resource busy"; retry.
+          for attempt in 1 2 3; do
+            make dmg-package APP_PATH="$APP_PATH" DMG_NAME="dist/MacEverything-$VERSION.dmg" && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep 5
+          done
+          if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+            codesign --force --sign "$SIGN_IDENTITY" --timestamp "dist/MacEverything-$VERSION.dmg"
+          fi
+
+      - name: Notarize and staple DMG
+        if: env.HAS_CERT == 'true' && env.HAS_NOTARY == 'true'
+        env:
+          NOTARY_APPLE_ID: ${{ secrets.NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.NOTARY_TEAM_ID }}
+          NOTARY_APP_PASSWORD: ${{ secrets.NOTARY_APP_PASSWORD }}
+        run: |
+          dmg="dist/MacEverything-${{ steps.version.outputs.version }}.dmg"
+          scripts/release/notarize.sh "$dmg"
+          xcrun stapler staple "$dmg"
+
+      - name: Checksums and release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD: ${{ steps.version.outputs.build }}
+        run: |
+          (cd dist && shasum -a 256 MacEverything-* > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          min_os="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$APP_PATH/Contents/Info.plist")"
+          if [[ "$HAS_CERT" == true && "$HAS_NOTARY" == true ]]; then
+            signing="Signed with Developer ID, notarized and stapled."
+          elif [[ "$HAS_CERT" == true ]]; then
+            signing="Signed with Developer ID but **not notarized**: Gatekeeper will block the first launch. Right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine /Applications/MacEverything.app\`."
+          else
+            signing="Ad-hoc signed and **not notarized**: Gatekeeper will block the first launch. Right-click the app and choose Open, or run \`xattr -dr com.apple.quarantine /Applications/MacEverything.app\`."
+          fi
+          cat > "$RUNNER_TEMP/notes.md" <<EOF
+          **MacEverything $VERSION** (build $BUILD, commit ${GITHUB_SHA::7})
+
+          - Requires macOS $min_os or later, Apple silicon.
+          - $signing
+          - Download the \`.dmg\` (drag to Applications) or the \`.zip\`; \`SHA256SUMS.txt\` lists checksums.
+          EOF
+          cat "$RUNNER_TEMP/notes.md" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MacEverything-${{ steps.version.outputs.version }}
+          path: dist/
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/* --clobber
+          else
+            flags=(--title "MacEverything $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --generate-notes --target "$GITHUB_SHA")
+            [[ "$PRERELEASE" == true ]] && flags+=(--prerelease)
+            gh release create "$TAG" dist/* "${flags[@]}"
+          fi
+
+      - name: Remove signing keychain
+        if: always() && env.HAS_CERT == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/release.keychain-db" || true

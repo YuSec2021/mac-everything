@@ -5,9 +5,14 @@ CORE_SRCS = $(wildcard MacEverything/Core/*.cpp)
 RE2_PREFIX = /opt/homebrew/opt/re2
 RE2_CFLAGS = -I$(RE2_PREFIX)/include -I/opt/homebrew/include
 RE2_LDFLAGS = -L$(RE2_PREFIX)/lib -L/opt/homebrew/opt/abseil/lib -lre2 -labsl_raw_logging_internal -labsl_throw_delegate
+XCODE_DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
+# Extra xcodebuild settings, e.g. CI passes CODE_SIGN_IDENTITY=- to build without a team.
+XCODEBUILD_FLAGS ?=
+APP_PATH ?= build/Release/MacEverything.app
+DMG_NAME ?= MacEverything.dmg
 
 # === Build targets ===
-.PHONY: test test-fast test-slow test-all test-asan test-tsan build clean app dmg daemon help
+.PHONY: test test-fast test-slow test-all test-asan test-tsan build clean app dmg dmg-package daemon help
 
 test_all: test_all.cpp $(CORE_SRCS)
 	$(CXX) $(CXXFLAGS) $(RE2_CFLAGS) $(FRAMEWORKS) $(RE2_LDFLAGS) -IMacEverything/Core $^ -o $@
@@ -59,16 +64,20 @@ test-all: test_all
 
 # === Xcode build ===
 app:
-	DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
+	DEVELOPER_DIR=$(XCODE_DEVELOPER_DIR) xcodebuild \
 		-project MacEverything.xcodeproj -scheme MacEverything \
-		-configuration Release build SYMROOT=build
+		-configuration Release build SYMROOT=build $(XCODEBUILD_FLAGS)
 
 # === Package ===
 dmg: app
+	$(MAKE) dmg-package
+
+# Packages an already-built app; the release workflow calls this after bundling and signing.
+dmg-package:
 	-hdiutil detach /Volumes/MacEverything 2>/dev/null
 	hdiutil create -volname MacEverything \
-		-srcfolder build/Release/MacEverything.app \
-		-ov -format UDZO MacEverything.dmg
+		-srcfolder $(APP_PATH) \
+		-ov -format UDZO $(DMG_NAME)
 
 # === Cleanup ===
 clean:
