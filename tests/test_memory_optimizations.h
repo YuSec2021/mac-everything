@@ -444,6 +444,114 @@ static void runMemoryOptimizationTests() {
         check(dense.storageBytes() < dense.size() * 2, "Delta IDs: dense postings including checkpoints use less than two bytes per ID");
     }
     {
+        // Batch erase must leave exactly what repeated single erases leave,
+        // including duplicates, absent IDs, and runs across checkpoints.
+        uint32_t seed = 11;
+        auto random = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed; };
+        bool same = true;
+        for (unsigned round = 0; round < 300 && same; ++round) {
+            me::PackedPostingList batch, single;
+            std::vector<uint32_t> values;
+            const uint32_t n = random() % 1500;
+            const uint32_t spread = round % 3 == 0 ? 3 : round % 3 == 1 ? 300 : 200000;
+            uint32_t v = random() % 50;
+            for (uint32_t i = 0; i < n; ++i) { values.push_back(v); v += random() % spread; }
+            for (uint32_t x : values) { batch.push_back(x); single.push_back(x); }
+            // Shape the checkpoints by some single-ID edits first.
+            for (unsigned k = 0; k < 20 && !values.empty(); ++k) {
+                const uint32_t x = random() % (v + 1);
+                batch.insert(std::lower_bound(batch.begin(), batch.end(), x), x);
+                single.insert(std::lower_bound(single.begin(), single.end(), x), x);
+            }
+            std::vector<uint32_t> removing;
+            const unsigned mode = random() % 4;
+            for (size_t i = 0; i < single.size(); ++i) {
+                const bool pick = mode == 0 ? true : mode == 1 ? random() % 2 : mode == 2 ? (i >= single.size() / 3 && i < single.size() / 2) : random() % 50 == 0;
+                if (pick) removing.push_back(single[i]);
+                if (random() % 40 == 0) removing.push_back(single[i] + 1);  // often absent
+            }
+            std::sort(removing.begin(), removing.end());
+            size_t expected = 0;
+            for (uint32_t x : removing) {
+                auto it = std::lower_bound(single.begin(), single.end(), x);
+                if (it != single.end() && *it == x) { single.erase(it); ++expected; }
+            }
+            same &= batch.eraseSorted(removing.data(), removing.data() + removing.size()) == expected;
+            same &= std::equal(batch.begin(), batch.end(), single.begin(), single.end());
+            for (size_t probe = 0; probe < 50 && !single.empty(); ++probe) {
+                const size_t rank = random() % single.size();
+                same &= batch[rank] == single[rank];
+            }
+            const uint32_t extra = (single.empty() ? 0 : single[single.size() - 1]) + random() % 1000;
+            batch.push_back(extra); single.push_back(extra);
+            same &= std::equal(batch.begin(), batch.end(), single.begin(), single.end());
+            if (!same) std::cout << "    batch erase mismatch in round " << round << "\n";
+        }
+        check(same, "Delta IDs: sorted batch erase matches repeated single erases");
+    }
+    {
+        // Prefix removal above the batch threshold must leave the same indexes,
+        // live count, recent cache and WAL as removing each path on its own.
+        auto fill = [](SearchEngine& engine) {
+            const char* exts[] = {".txt", ".swift", ".h", "", ".TXT", ".framework", ".a.b"};
+            for (int i = 0; i < 400; ++i) {
+                FileRecord rec;
+                rec.name = "File" + std::to_string(i % 37) + "_" + std::to_string(i) + exts[i % 7];
+                rec.path = i % 5 == 0 ? "/keep/x" : (i % 2 ? "/sys/lib/Frameworks/A" : "/sys/lib/Frameworks/B/c");
+                rec.type = i % 9 ? 1 : 2;
+                rec.modTime = 1000 + (i * 7919) % 401;
+                engine.addRecord(std::move(rec));
+            }
+        };
+        const std::string base = "/tmp/test_memopt_batchrm_" + std::to_string(getpid());
+        std::remove((base + "a.wal").c_str());
+        std::remove((base + "b.wal").c_str());
+        SearchEngine batched, single;
+        fill(batched);
+        fill(single);
+        std::vector<std::string> paths;
+        for (uint32_t i = 0; i < single.recordCount(); ++i) {
+            const auto r = single.getRecord(i);
+            if (r.type && r.path.rfind("/sys/lib/Frameworks", 0) == 0) paths.push_back(SearchEngine::makeFullPath(r.path, r.name));
+        }
+        auto walA = std::make_shared<IndexWAL>(), walB = std::make_shared<IndexWAL>();
+        bool walOk = walA->open(base + "a.wal") && walB->open(base + "b.wal");
+        batched.attachWAL(walA);
+        single.attachWAL(walB);
+        const uint32_t removed = batched.removeByPathPrefix("/SYS/lib/frameworks");
+        for (const auto& p : paths) single.removeByPath(p);
+        batched.detachWAL();
+        single.detachWAL();
+        walA.reset();
+        walB.reset();
+        const auto entriesA = IndexWAL::readAll(base + "a.wal"), entriesB = IndexWAL::readAll(base + "b.wal");
+        bool walSame = walOk && entriesA.size() == paths.size() && entriesA.size() == entriesB.size();
+        for (size_t i = 0; walSame && i < entriesA.size(); ++i)
+            walSame = entriesA[i].op == entriesB[i].op && entriesA[i].fullPath == entriesB[i].fullPath;
+        check(removed == paths.size() && removed >= SearchEngine::kBatchIndexRemoval,
+              "BatchRemove: prefix removal takes the batched path");
+        check(batched.postingListsForTesting() == single.postingListsForTesting(),
+              "BatchRemove: trigram and extension posting lists equal per-record removal");
+        check(batched.liveRecordCount() == single.liveRecordCount() &&
+                  batched.recentIndices(500) == single.recentIndices(500),
+              "BatchRemove: live count and recent cache equal per-record removal");
+        check(walSame, "BatchRemove: WAL entries keep per-record order and content");
+        std::remove((base + "a.wal").c_str());
+        std::remove((base + "b.wal").c_str());
+
+        SearchEngine rescanned, reference;
+        fill(rescanned);
+        fill(reference);
+        rescanned.batchRescanPrefix("/sys/lib/Frameworks", {});
+        for (const auto& p : paths) reference.removeByPath(p);
+        check(rescanned.postingListsForTesting() == reference.postingListsForTesting() &&
+                  rescanned.liveRecordCount() == reference.liveRecordCount(),
+              "BatchRemove: rescan phase 1 leaves the same posting lists");
+        check(rescanned.query("file3_").size() == reference.query("file3_").size() &&
+                  rescanned.query("*.txt").size() == reference.query("*.txt").size(),
+              "BatchRemove: queries after batch removal match per-record removal");
+    }
+    {
         SearchEngine engine;
         engine.loadRecords({{"first.txt", "/page", 1, 1, 1}, {"second.txt", "/page", 1, 2, 2}});
         const auto generation = engine.compactionGeneration();

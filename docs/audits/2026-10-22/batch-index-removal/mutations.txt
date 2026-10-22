@@ -1,0 +1,28 @@
+# base run 1
+lookup_hit_us=1.476 hits=100000
+lookup_miss_us=1.017 misses=100000
+update_us=107.558 live=6381948
+small_prefix_remove_ms=51.29 removed=28
+rescan_prefix_ms=56.9 removed=2
+prefix_remove_ms=1396.9 removed=41562 live=6340356
+# base run 2
+lookup_hit_us=1.101 hits=100000
+lookup_miss_us=0.874 misses=100000
+update_us=106.172 live=6381948
+small_prefix_remove_ms=50.45 removed=28
+rescan_prefix_ms=54.8 removed=2
+prefix_remove_ms=1430.1 removed=41562 live=6340356
+# new run 1
+lookup_hit_us=1.164 hits=100000
+lookup_miss_us=1.050 misses=100000
+update_us=109.015 live=6381948
+small_prefix_remove_ms=54.08 removed=28
+rescan_prefix_ms=60.4 removed=2
+prefix_remove_ms=245.7 removed=41562 live=6340356
+# new run 2
+lookup_hit_us=1.091 hits=100000
+lookup_miss_us=0.870 misses=100000
+update_us=109.929 live=6381948
+small_prefix_remove_ms=51.87 removed=28
+rescan_prefix_ms=56.3 removed=2
+prefix_remove_ms=252.8 removed=41562 live=6340356

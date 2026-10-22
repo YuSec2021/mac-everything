@@ -418,7 +418,11 @@ uint32_t SearchEngine::removeByPathPrefix(const std::string& pathPrefix) {
 
     std::string lowerPrefix = me::toLower(pathPrefix);
     uint32_t removed = 0;
-    for (uint32_t idx : pathRecordsUnder(lowerPrefix)) {
+    const auto matches = pathRecordsUnder(lowerPrefix);
+    // Name indexes must be cleaned before tombstoning clears names_.lower().
+    const bool batched = matches.size() >= kBatchIndexRemoval;
+    if (batched) removeIndexEntriesForRecords(matches);
+    for (uint32_t idx : matches) {
         // H-4: Write WAL entry for each removed path
         if (wal_) {
             std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
@@ -426,10 +430,9 @@ uint32_t SearchEngine::removeByPathPrefix(const std::string& pathPrefix) {
         }
 
         time_t oldModTime = static_cast<time_t>(modTimes_[idx]);
-        // Clean up trigram index (must happen before clearing names_.lower())
-        removeTrigramsForRecord(idx);
+        if (!batched) removeTrigramsForRecord(idx);
         removePathRecord(idx);
-        removeExtensionForRecord(idx);
+        if (!batched) removeExtensionForRecord(idx);
         tombstoneAt(idx);
         liveCount_.fetch_sub(1, std::memory_order_relaxed);
         removeFromRecentCache(idx, oldModTime);
@@ -447,16 +450,19 @@ uint32_t SearchEngine::batchRescanPrefix(const std::string& pathPrefix,
     // Remove trigrams incrementally for each tombstoned record.
     std::string lowerPrefix = me::toLower(pathPrefix);
     uint32_t removed = 0;
-    for (uint32_t idx : pathRecordsUnder(lowerPrefix)) {
+    const auto matches = pathRecordsUnder(lowerPrefix);
+    const bool batched = matches.size() >= kBatchIndexRemoval;
+    if (batched) removeIndexEntriesForRecords(matches);
+    for (uint32_t idx : matches) {
         // Write WAL Remove entry for each removed path
         if (wal_) {
             std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
             wal_->append(WALOp::Remove, fullPath);
         }
 
-        removeTrigramsForRecord(idx);
+        if (!batched) removeTrigramsForRecord(idx);
         removePathRecord(idx);
-        removeExtensionForRecord(idx);
+        if (!batched) removeExtensionForRecord(idx);
         tombstoneAt(idx);
         liveCount_.fetch_sub(1, std::memory_order_relaxed);
         removed++;
