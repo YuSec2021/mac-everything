@@ -1,0 +1,7 @@
+# Live app, 2026-10-22 13:05, HTTP API 127.0.0.1:19860 (paths omitted)
+log since launch: 0 ERROR/WARN lines
+q="MacEverything/readme" limit=3 -> 3 results
+q="size:>4gb"            limit=3 -> 3 results, first size=8485014416 bytes
+q="ext:swift"            limit=3 -> 3 results
+FSEvents: new file under the indexed /private/tmp found by name after 2 s; gone 1 s after deletion
+status: recordCount=6824308 liveRecordCount=6420018

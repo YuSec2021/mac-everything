@@ -15,9 +15,7 @@ void SearchEngine::loadRecordsV6(StringPool&& origNamePool,
                                   StringPool&& lowerPathPool,
                                   std::vector<uint8_t>&& types,
                                   std::vector<uint64_t>&& sizes,
-                                  std::vector<int64_t>&& modTimes,
-                                  std::vector<uint64_t>&& inodes,
-                                  std::vector<int32_t>&& devIds) {
+                                  std::vector<int64_t>&& modTimes) {
     auto lock = lockForMutation();
     compactionGen_.fetch_add(1, std::memory_order_relaxed);
 
@@ -36,47 +34,10 @@ void SearchEngine::loadRecordsV6(StringPool&& origNamePool,
     std::vector<uint64_t>{}.swap(sizes);
     modTimes_.assign(modTimes);
     std::vector<int64_t>{}.swap(modTimes);
-    inodes_ = std::move(inodes);
-    devIds_.assign(devIds);
-    std::vector<int32_t>{}.swap(devIds);
 
-    // Rebuild pathLookup_ and lowerPathLookup_ from pathPool_ entries
-    pathLookup_.clear();
-    lowerPathLookup_.clear();
-    pathLookup_.reserve(pathPool_.entryCount());
-    lowerPathLookup_.reserve(pathPool_.entryCount());
-    for (uint32_t i = 0; i < pathPool_.entryCount(); i++) {
-        if (pathPool_.isLive(i)) {
-            me::setPathRecord(pathLookup_, pathPool_.view(i), i,
-                              [this](uint32_t j) { return pathPool_.view(j); });
-            me::setPathRecord(lowerPathLookup_, pathPool_.lower().view(i), i,
-                              [this](uint32_t j) { return pathPool_.lower().view(j); });
-        }
-    }
-
-    pathIndex_.clear();
-    pathIndex_.reserve(n);
-    for (uint32_t i = 0; i < n; ++i) {
-        if (types_[i] != 0) setPathRecord(lowerFullPath(i), i);
-    }
-
-    // Tombstone orphaned duplicates: records not in pathIndex_ as winners
-    uint32_t actualLive = 0;
-    {
-        // Collect winner indices from pathIndex_ values
-        std::vector<bool> isWinner(n, false);
-        for (const auto& [_, idx] : pathIndex_) {
-            isWinner[idx] = true;
-        }
-        for (uint32_t i = 0; i < n; i++) {
-            if (types_[i] == 0) continue;
-            if (isWinner[i]) {
-                actualLive++;
-            } else {
-                tombstoneAt(i);
-            }
-        }
-    }
+    // Rebuild pathLookup_, lowerPathLookup_ and canonical directories from pathPool_ entries
+    rebuildDirLookups();
+    uint32_t actualLive = rebuildPathIndex();
 
     liveCount_.store(actualLive, std::memory_order_relaxed);
 
@@ -170,6 +131,6 @@ void SearchEngine::completePhase2() {
 
 SearchEngine::V6ReadView SearchEngine::readViewForV6() const {
     return {std::unique_lock(mutationGate_), std::shared_lock(mutex_), names_.original(), names_.lower(), pathIndices_,
-            pathPool_, pathPool_.lower(), types_, sizes_, modTimes_, inodes_, devIds_,
+            pathPool_, pathPool_.lower(), types_, sizes_, modTimes_,
             liveCount_.load(std::memory_order_relaxed)};
 }

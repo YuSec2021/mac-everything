@@ -1,0 +1,8 @@
+dirs>16     count=59594   records=4068355  (63.7%)
+dirs>64     count=10192   records=2563790  (40.2%)
+dirs>256    count=1529    records=1547334  (24.2%)
+dirs>1024   count=165     records=975388   (15.3%)
+dirs>4096   count=47      records=729497   (11.4%)
+dirs>16384  count=8       records=436652   (6.8%)
+largest=117693
+avg dir size seen by a random record=5428

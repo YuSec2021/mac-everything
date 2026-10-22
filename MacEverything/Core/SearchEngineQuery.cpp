@@ -124,17 +124,13 @@ void SearchEngine::queryDirList(const ParsedQuery& pq,
         if (it == pathLookup_.end()) continue;
 
         uint32_t childPathIdx = it->second;
-        if (childPathIdx >= pathIdxToRecords_.size()) continue;
-
-        const auto& childRecords = pathIdxToRecords_[childPathIdx];
-        for (uint32_t childIdx : childRecords) {
-            if (types_[childIdx] == 0) continue; // skip tombstones
+        pathIdxToRecords_.forEach(childPathIdx, types_, [&](uint32_t childIdx) {
             const char* nd = names_.lower().data(childIdx);
             uint16_t nl = names_.lower().length(childIdx);
             uint8_t priority = 2; // children are all "contains" priority
             uint32_t pLen = static_cast<uint32_t>(pathPool_.length(pathIndices_[childIdx]) + 1 + nl);
             merged.push_back({childIdx, priority, pLen});
-        }
+        });
     }
 }
 

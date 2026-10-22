@@ -1,0 +1,381 @@
+==================
+WARNING: ThreadSanitizer: data race (pid=41906)
+  Read of size 8 at 0x00010a504ce8 by thread T42:
+    #0 std::__1::vector<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>, std::__1::allocator<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>>>::operator[][abi:nqe220106](unsigned long) vector.h:415 (test_tsan_head:arm64+0x100216208)
+    #1 invocation function for block in SearchEngine::queryAdvanced(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned int, bool, QueryTimingInfo&, unsigned long long, std::__1::atomic<unsigned long long> const*) const SearchEngineAdvancedQuery.cpp:851 (test_tsan_head:arm64+0x100216208)
+    #2 __wrap_dispatch_apply_block_invoke <null> (libclang_rt.tsan_osx_dynamic.dylib:arm64e+0x8fb40)
+    #3 _dispatch_client_callout2 <null> (libdispatch.dylib:arm64e+0x1b5b4)
+
+  Previous write of size 8 at 0x00010a504ce8 by thread T38:
+    #0 std::__1::vector<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>, std::__1::allocator<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>>>::vector[abi:nqe220106](std::__1::vector<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>, std::__1::allocator<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>>>&&) vector.h:971 (test_tsan_head:arm64+0x100215fcc)
+    #1 std::__1::vector<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>, std::__1::allocator<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>>>::vector[abi:nqe220106](std::__1::vector<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>, std::__1::allocator<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>>>&&) vector.h:970 (test_tsan_head:arm64+0x100215fcc)
+    #2 __Block_byref_object_copy_ SearchEngineAdvancedQuery.cpp (test_tsan_head:arm64+0x100215fcc)
+    #3 _Block_object_assign <null> (libsystem_blocks.dylib:arm64e+0x10bc)
+    #4 _call_copy_helpers_excp <null> (libsystem_blocks.dylib:arm64e+0x1394)
+    #5 SearchEngine::queryAdvanced(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned int, bool, QueryTimingInfo&, unsigned long long, std::__1::atomic<unsigned long long> const*) const SearchEngineAdvancedQuery.cpp:872 (test_tsan_head:arm64+0x100213b48)
+    #6 SearchEngine::query(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned int, bool, QueryTimingInfo&, unsigned long long) const SearchEngineQuery.cpp:253 (test_tsan_head:arm64+0x10022ffbc)
+    #7 SearchEngine::query(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned int, bool, unsigned long long) const SearchEngineQuery.cpp:184 (test_tsan_head:arm64+0x10022f6a8)
+    #8 runThreadSafetyTest()::$_0::operator()() const test_thread_safety.h:36 (test_tsan_head:arm64+0x100165d70)
+    #9 std::__1::__invoke_result_impl<void, runThreadSafetyTest()::$_0>::type std::__1::__invoke[abi:nqe220106]<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&) invoke.h:90 (test_tsan_head:arm64+0x100165d70)
+    #10 void std::__1::__thread_execute[abi:nqe220106]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, runThreadSafetyTest()::$_0, 0ul>(std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, runThreadSafetyTest()::$_0>&, std::__1::__integer_sequence<unsigned long, 0ul>) thread.h:161 (test_tsan_head:arm64+0x100165d70)
+    #11 void* std::__1::__thread_proxy[abi:nqe220106]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, runThreadSafetyTest()::$_0>>(void*) thread.h:169 (test_tsan_head:arm64+0x100165d70)
+
+  Location is heap block of size 64 at 0x00010a504cc0 allocated by thread T38:
+    #0 malloc <null> (libclang_rt.tsan_osx_dynamic.dylib:arm64e+0x67d68)
+    #1 _malloc_type_malloc_outlined <null> (libsystem_malloc.dylib:arm64e+0x1edb0)
+    #2 _call_copy_helpers_excp <null> (libsystem_blocks.dylib:arm64e+0x1394)
+    #3 SearchEngine::queryAdvanced(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned int, bool, QueryTimingInfo&, unsigned long long, std::__1::atomic<unsigned long long> const*) const SearchEngineAdvancedQuery.cpp:872 (test_tsan_head:arm64+0x100213b48)
+    #4 SearchEngine::query(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned int, bool, QueryTimingInfo&, unsigned long long) const SearchEngineQuery.cpp:253 (test_tsan_head:arm64+0x10022ffbc)
+    #5 SearchEngine::query(std::__1::basic_string<char, std::__1::char_traits<char>, std::__1::allocator<char>> const&, unsigned int, bool, unsigned long long) const SearchEngineQuery.cpp:184 (test_tsan_head:arm64+0x10022f6a8)
+    #6 runThreadSafetyTest()::$_0::operator()() const test_thread_safety.h:36 (test_tsan_head:arm64+0x100165d70)
+    #7 std::__1::__invoke_result_impl<void, runThreadSafetyTest()::$_0>::type std::__1::__invoke[abi:nqe220106]<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&) invoke.h:90 (test_tsan_head:arm64+0x100165d70)
+    #8 void std::__1::__thread_execute[abi:nqe220106]<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, runThreadSafetyTest()::$_0, 0ul>(std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, runThreadSafetyTest()::$_0>&, std::__1::__integer_sequence<unsigned long, 0ul>) thread.h:161 (test_tsan_head:arm64+0x100165d70)
+    #9 void* std::__1::__thread_proxy[abi:nqe220106]<std::__1::tuple<std::__1::unique_ptr<std::__1::__thread_struct, std::__1::default_delete<std::__1::__thread_struct>>, runThreadSafetyTest()::$_0>>(void*) thread.h:169 (test_tsan_head:arm64+0x100165d70)
+
+  Thread T42 (tid=33529360, running) is a GCD worker thread
+
+  Thread T38 (tid=33529356, running) created by main thread at:
+    #0 pthread_create <null> (libclang_rt.tsan_osx_dynamic.dylib:arm64e+0x33bac)
+    #1 std::__1::__libcpp_thread_create[abi:nqe220106](_opaque_pthread_t**, void* (*)(void*), void*) pthread.h:182 (test_tsan_head:arm64+0x100165bd8)
+    #2 std::__1::thread::thread[abi:nqe220106]<runThreadSafetyTest()::$_0, 0>(runThreadSafetyTest()::$_0&&) thread.h:221 (test_tsan_head:arm64+0x100165bd8)
+    #3 std::__1::thread::thread[abi:nqe220106]<runThreadSafetyTest()::$_0, 0>(runThreadSafetyTest()::$_0&&) thread.h:212 (test_tsan_head:arm64+0x100165bd8)
+    #4 std::__1::thread* std::__1::construct_at[abi:nqe220106]<std::__1::thread, runThreadSafetyTest()::$_0, std::__1::thread*>(std::__1::thread*, runThreadSafetyTest()::$_0&&) construct_at.h:37 (test_tsan_head:arm64+0x100165bd8)
+    #5 std::__1::thread* std::__1::__construct_at[abi:nqe220106]<std::__1::thread, runThreadSafetyTest()::$_0, std::__1::thread*>(std::__1::thread*, runThreadSafetyTest()::$_0&&) construct_at.h:45 (test_tsan_head:arm64+0x100165bd8)
+    #6 void std::__1::allocator_traits<std::__1::allocator<std::__1::thread>>::construct[abi:nqe220106]<std::__1::thread, runThreadSafetyTest()::$_0, 0>(std::__1::allocator<std::__1::thread>&, std::__1::thread*, runThreadSafetyTest()::$_0&&) allocator_traits.h:302 (test_tsan_head:arm64+0x100165bd8)
+    #7 std::__1::thread* std::__1::vector<std::__1::thread, std::__1::allocator<std::__1::thread>>::__emplace_back_slow_path<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&) vector.h:1109 (test_tsan_head:arm64+0x1001659cc)
+    #8 std::__1::thread& std::__1::vector<std::__1::thread, std::__1::allocator<std::__1::thread>>::emplace_back<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&)::'lambda0'()::operator()() const vector.h:1149 (test_tsan_head:arm64+0x1001659cc)
+    #9 void std::__1::__if_likely_else[abi:nqe220106]<std::__1::thread& std::__1::vector<std::__1::thread, std::__1::allocator<std::__1::thread>>::emplace_back<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&)::'lambda'(), std::__1::thread& std::__1::vector<std::__1::thread, std::__1::allocator<std::__1::thread>>::emplace_back<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&)::'lambda0'()>(bool, std::__1::thread& std::__1::vector<std::__1::thread, std::__1::allocator<std::__1::thread>>::emplace_back<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&)::'lambda'(), std::__1::thread& std::__1::vector<std::__1::thread, std::__1::allocator<std::__1::thread>>::emplace_back<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&)::'lambda0'()) vector.h:1129 (test_tsan_head:arm64+0x10000df84)
+    #10 std::__1::thread& std::__1::vector<std::__1::thread, std::__1::allocator<std::__1::thread>>::emplace_back<runThreadSafetyTest()::$_0>(runThreadSafetyTest()::$_0&&) vector.h:1143 (test_tsan_head:arm64+0x10000df84)
+    #11 runThreadSafetyTest() test_thread_safety.h:32 (test_tsan_head:arm64+0x10000df84)
+    #12 main test_all.cpp:263 (test_tsan_head:arm64+0x10000df84)
+
+SUMMARY: ThreadSanitizer: data race vector.h:415 in std::__1::vector<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>, std::__1::allocator<std::__1::vector<SearchEngine::Match, std::__1::allocator<SearchEngine::Match>>>>::operator[][abi:nqe220106](unsigned long)
+==================
+
+╔══════════════════════════════════════════╗
+║  MacEverything Full Test & Benchmark     ║
+╚══════════════════════════════════════════╝
+
+  Selected parts: 21 3d 47 5 64 69 7 7c
+
+========================================
+  Part 3d: Compact Records Tests
+========================================
+
+    [PASS] Compact: initial recordCount == 100
+    [PASS] Compact: initial liveRecordCount == 100
+    [PASS] Compact: after removing 50, liveRecordCount == 50
+    [PASS] Compact: after removing 50, recordCount still 100 (tombstones)
+    [PASS] Compact: after compaction, recordCount == 50
+    [PASS] Compact: after compaction, liveRecordCount == 50
+    [PASS] Compact: compact_50.txt still queryable after compaction
+    [PASS] Compact: correct record data after compaction
+    [PASS] Compact: compact_0.txt not queryable after compaction
+    [PASS] Compact: no-op compaction preserves recordCount
+
+========================================
+  Part 5: Thread Safety Stress Test
+========================================
+
+    [PASS] No exceptions during concurrent access
+    [PASS] Reader threads performed queries
+    [PASS] Writer threads performed mutations
+
+    Duration:     2s
+    Readers:      4 threads
+    Writers:      2 threads
+    Read ops:     269 (134 ops/s)
+    Write ops:    16482 (8241 ops/s)
+    Total ops:    16751
+    Live records: 10000
+
+═══ Part 7: CompactRecords + ContentIndex Remap ═══
+
+    [PASS] C1: All 5 files indexed in ContentIndex
+    [PASS] C1: 3 live records after removal
+    [PASS] C1: 3 content-indexed files after removal
+    [PASS] C1: file0 still in SearchEngine
+    [PASS] C1: file2 still in SearchEngine
+    [PASS] C1: file4 still in SearchEngine
+    [PASS] C1: file1 old index not in ContentIndex
+    [PASS] C1: file3 old index not in ContentIndex
+    [PASS] C1: ContentIndex still has 3 files after IndexPersistence::compact()
+
+═══ Part 7c: ContentIndexPersistence WAL Race Safety ═══
+
+    [PASS] C3: Concurrent WAL appends + compacts completed without crash
+    [PASS] C3: Substantial concurrent WAL appends completed without race
+
+========================================
+  Part 21: Memory Optimization Tests
+========================================
+
+    [PASS] Growth: appending preserves loaded array contents
+    [PASS] Growth: a loaded array does not double after one file event
+    [PASS] Growth: string and entry buffers remain aligned through repeated growth
+    [PASS] NarrowColumn: sizes at and past 32 bits keep exact values
+    [PASS] NarrowColumn: set moves rows between narrow storage and the side map
+    [PASS] NarrowColumn: shrinking drops side entries; copies stay independent
+    [PASS] NarrowColumn: growth fills zeros
+    [PASS] NarrowColumn: negative and out-of-range modification times keep exact values
+    [PASS] DictColumn: device IDs past 255 distinct values keep exact values
+    [PASS] DictColumn: set reuses dictionary codes and falls back to the side map
+    [PASS] CompactPath: 32-bit hash keys resolve every inserted path
+    [PASS] Columns: v6 save succeeds
+    [PASS] Columns: v6 reload succeeds
+    [PASS] Columns: v6 round trip keeps oversized sizes, negative times and many devices
+    [PASS] Columns: size filter reads oversized values from the side map
+    [PASS] Directory tree: exact root, relative, repeated slash, Unicode and maximum-length roundtrip
+    [PASS] Directory tree: copied snapshot is independent
+    [PASS] Directory tree: legacy flat entries preserve IDs and tombstones
+    [PASS] Directory tree: query cursor reconstructs changing parent IDs
+    [PASS] Directory tree: shared prefixes are not stored for every path
+    [PASS] Folded names: identical ASCII and Unicode names share bytes
+    [PASS] Folded names: changed case and Unicode byte lengths remain independent
+    [PASS] Folded names: copied snapshots survive deletion and growth
+    [PASS] Folded names: both views survive legacy flat roundtrip
+    [PASS] Mapped input: self-append detaches safely while copied owner remains live
+    [PASS] Mapped input: move preserves backing and leaves reusable source
+    [PASS] Directory lowercase: whole-path Unicode and invalid UTF-8 semantics are preserved
+    [PASS] CompactPath: hash collision preserves distinct files
+    [PASS] CompactPath: resolves first colliding path
+    [PASS] CompactPath: resolves second colliding path
+    [PASS] CompactPath: hash match cannot identify a missing file
+    [PASS] CompactPath: duplicate path replaces only its own record
+    [PASS] CompactPath: deleting one collision preserves the other
+    [PASS] CompactPath: copied const snapshot remains independently queryable
+    [PASS] Packed IDs: varint deltas retain full ID range in compact storage
+    [PASS] Packed IDs: promotion preserves all 24-bit and 32-bit boundaries
+    [PASS] Packed IDs: sorted insert and erase preserve values
+    [PASS] Packed IDs: copied list owns independent storage
+    [PASS] Packed IDs: empty iterator range
+    [PASS] Packed IDs: repeated growth preserves posting order
+    [PASS] Delta IDs: randomized insert, erase, seek and sequential iteration agree with vector
+    [PASS] Delta IDs: erasing checkpoints to empty permits full-range reuse
+    [PASS] Delta IDs: dense postings including checkpoints use less than two bytes per ID
+    [PASS] Result pages: tombstones are skipped without shifting record IDs
+    [PASS] Result pages: stale IDs rejected under lock after compaction
+    [PASS] Result pages: reload also invalidates outstanding IDs
+  --- Path deduplication in loadRecords ---
+    [PASS] PathDedup: 150 records loaded
+    [PASS] PathDedup: 150 live records
+    [PASS] PathDedup: only 2 unique paths in PathTable
+    [PASS] PathDedup: getRecord(0).path reconstructed
+    [PASS] PathDedup: getRecord(0).name correct
+    [PASS] PathDedup: getRecord(100).path reconstructed
+    [PASS] PathDedup: getRecord(100).name correct
+
+  --- Query correctness after path dedup ---
+    [PASS] Query: 'hello' finds 1 result
+    [PASS] Query: 'hello' correct file
+    [PASS] Query: 'readme' finds 1 result
+    [PASS] Query: '/home/user' returns 0 (no node name contains 'user')
+    [PASS] Query: case-insensitive 'README' finds 1 result
+
+  --- Mutations with path dedup ---
+    [PASS] Mutation: addRecord name correct
+    [PASS] Mutation: addRecord path reconstructed from PathTable
+    [PASS] Mutation: addRecord new path correct
+    [PASS] Mutation: removeByPath returns true
+    [PASS] Mutation: liveCount after remove
+    [PASS] Mutation: removed file not queryable
+    [PASS] Mutation: updateByPath new name queryable
+    [PASS] Mutation: updateByPath path correct
+
+  --- removeByPathPrefix with path dedup ---
+    [PASS] removeByPathPrefix: removed 2 records
+    [PASS] removeByPathPrefix: 1 live record
+    [PASS] removeByPathPrefix: non-removed file still queryable
+
+  --- Compaction rebuilds PathTable ---
+    [PASS] Compact: 3 unique paths before
+    [PASS] Compact: remap not empty
+    [PASS] Compact: file_1 still queryable after compaction
+    [PASS] Compact: path correctly reconstructed after compaction
+
+  --- forEachRecordWithPath vs getRecord ---
+    [PASS] forEachRecordWithPath: 3 results
+    [PASS] forEachRecordWithPath: name[0] matches getRecord
+    [PASS] forEachRecordWithPath: path[0] matches getRecord
+    [PASS] forEachRecordWithPath: type[0] matches getRecord
+    [PASS] forEachRecordWithPath: size[0] matches getRecord
+    [PASS] forEachRecordWithPath: name[1] matches getRecord
+    [PASS] forEachRecordWithPath: path[1] matches getRecord
+    [PASS] forEachRecordWithPath: type[1] matches getRecord
+    [PASS] forEachRecordWithPath: size[1] matches getRecord
+    [PASS] forEachRecordWithPath: name[2] matches getRecord
+    [PASS] forEachRecordWithPath: path[2] matches getRecord
+    [PASS] forEachRecordWithPath: type[2] matches getRecord
+    [PASS] forEachRecordWithPath: size[2] matches getRecord
+
+  --- forEachRecordWithPath skips tombstones ---
+    [PASS] forEachRecordWithPath: skips tombstoned record
+    [PASS] forEachRecordWithPath: first live record correct
+    [PASS] forEachRecordWithPath: second live record correct
+
+  --- Persistence roundtrip ---
+    [PASS] Persistence: saveToFile succeeded
+    [PASS] Persistence: loadFromFile succeeded
+    [PASS] Persistence: lastEventId preserved
+    [PASS] Persistence: extra metadata preserved
+    [PASS] Persistence: 3 records loaded
+    [PASS] Persistence: 2 unique paths after load
+    [PASS] Persistence: record[0].name correct
+    [PASS] Persistence: record[0].path reconstructed
+    [PASS] Persistence: record[0].size correct
+    [PASS] Persistence: record[0].inode correct
+    [PASS] Persistence: record[0].devId correct
+    [PASS] Persistence: record[2].name correct
+    [PASS] Persistence: record[2].path reconstructed
+    [PASS] Persistence: query works after load
+
+  --- WAL replay correctness ---
+    [PASS] WAL replay: 3 entries in WAL
+    [PASS] WAL replay: 2 live records after replay
+    [PASS] WAL replay: 'added' queryable
+    [PASS] WAL replay: added record path correct
+    [PASS] WAL replay: 'base' removed
+    [PASS] WAL replay: 'final' queryable
+    [PASS] WAL replay: final record path correct
+
+  --- Trigram without recordTrigrams_ ---
+    [PASS] Trigram-noStore: 'doc' matches 2 files
+    [PASS] Trigram-noStore: 'doc' matches 3 after add
+    [PASS] Trigram-noStore: 'document' not found after remove
+    [PASS] Trigram-noStore: 'doc' matches 2 after remove
+    [PASS] Trigram-noStore: 'doc' matches 2 after compaction
+    [PASS] Trigram-noStore: 'readme' matches 1 after compaction
+
+  --- resolveRecordPath ---
+    [PASS] resolveRecordPath: idx 0 correct
+    [PASS] resolveRecordPath: idx 1 same path
+    [PASS] resolveRecordPath: idx 2 different path
+
+  --- indexForPath ---
+    [PASS] indexForPath: found correct index
+    [PASS] indexForPath: returns UINT32_MAX for missing
+
+  --- PathTable bounds check ---
+    [PASS] PathTable bounds: 2 entries
+    [PASS] PathTable bounds: resolve(0) works
+    [PASS] PathTable bounds: resolve(1) works
+    [PASS] PathTable bounds: out-of-range returns empty
+    [PASS] PathTable bounds: UINT32_MAX returns empty
+
+  --- resolveRecordPath value copy + bounds ---
+    [PASS] resolveRecordPath: valid index returns correct path
+    [PASS] resolveRecordPath: out-of-bounds returns empty
+
+========================================
+  Part 47: Path Trigram Index
+========================================
+
+  --- Test 1: Path trigram index build ---
+    [PASS] Path trigram: 'homebrew' matches 2 files in homebrew paths
+    [PASS] Path trigram: 'Desktop' matches 1 file
+
+  --- Test 2: pathIdx -> records mapping ---
+    [PASS] Path trigram: 'shared' finds all 3 files in /shared/dir
+    [PASS] Path trigram: 'other' finds 1 file in /other/place
+
+  --- Test 3: Incremental add/remove ---
+    [PASS] Path trigram: initial 'alpha' match
+    [PASS] Path trigram: 'beta' found after addRecord
+    [PASS] Path trigram: 'alpha' matches 2 after second add
+    [PASS] Path trigram: 'alpha' matches 1 after remove
+    [PASS] Path trigram: 'beta' empty after update moved record away
+    [PASS] Path trigram: 'gamma' found after update
+
+  --- Test 4: Path-only matching ---
+    [PASS] Path trigram: 'DerivedData' matches 2 files (path-only)
+    [PASS] Path trigram: matched files are under DerivedData path
+    [PASS] Path trigram: matched files are under DerivedData path
+
+  --- Test 5: Slash in keyword uses structured query ---
+    [PASS] Slash keyword: 'home/user' structured query, no name match → 0 results
+
+  --- Test 6: Compaction consistency ---
+    [PASS] Path trigram: same result count after compaction
+    [PASS] Path trigram: 10 live records after compaction
+
+  --- Test 7: Short keyword fallback ---
+    [PASS] Short keyword: 'ab' finds match via linear scan fallback
+
+  --- Test 8: batchRescanPrefix ---
+    [PASS] batchRescan: 'target' matches 3 new files
+    [PASS] batchRescan: 'rescan' matches all 4 files (3 new + 1 kept)
+
+  Part 47 complete.
+
+── Part 64: AST Structured Transform ──
+  Passed: 60  Failed: 0
+
+── Part 69: Trigram Competition ──
+    [PASS] 69.1 *.txt finds 3 .txt files
+    [PASS] 69.1 *.txt uses trigram path (got: advanced-trigram)
+    [PASS] 69.2 *.cpp finds 2 files
+    [PASS] 69.2 trigram narrows candidates (cands=2 total=202)
+    [PASS] 69.3 path competition: 2 results
+    [PASS] 69.3 directory scan narrows unselective name candidates (got: advanced-path-scan)
+    [PASS] 69.4 'main' finds 2 files
+    [PASS] 69.4 pure name uses advanced-trigram (got: advanced-trigram)
+    [PASS] 69.5 *a* falls to linear (got: advanced-linear-gcd)
+    [PASS] 69.6 test*.swift finds 2 files
+    [PASS] 69.6 test*.swift uses trigram (got: advanced-trigram)
+    [PASS] 69.7 'test' finds 50 files with relaxed threshold
+    [PASS] 69.7 high-freq keyword uses trigram with relaxed threshold (got: advanced-trigram)
+    [PASS] 69.8 'test' finds 15 files
+    [PASS] 69.8 >10% candidates falls to linear (got: advanced-linear-gcd)
+    [PASS] 69.9 *.py finds 30 python files
+    [PASS] 69.9 *.py uses trigram with relaxed threshold (got: advanced-trigram)
+    [PASS] 69.10 /Library/Application finds 2 results
+    [PASS] 69.10 name trigram wins, skips path expansion (got: advanced-trigram)
+    [PASS] 69.11 /raresegment/common finds 2 results
+    [PASS] 69.11 directory scan narrows unselective name candidates (got: advanced-path-scan)
+    [PASS] 69.12 trigram timing is captured (trigramMs=0.004125)
+    [PASS] Directory scan: parent constraints exclude filename-only matches
+    [PASS] Directory scan: short name uses directory mapping without path trigrams
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root/RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root/RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root/RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root//a
+    [PASS] Directory scan: same ordered results as full scan: root//a
+    [PASS] Directory scan: same ordered results as full scan: root//a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a | readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a | readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a | readme
+    [PASS] Directory scan: same ordered results as full scan: !RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: !RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: !RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a ext:txt
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a ext:txt
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a ext:txt
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a !deep/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a !deep/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a !deep/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a other/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a other/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a other/a
+    [PASS] Directory scan: same ordered results as full scan: missing-path/a
+    [PASS] Directory scan: same ordered results as full scan: missing-path/a
+    [PASS] Directory scan: same ordered results as full scan: missing-path/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/readme
+    [PASS] Directory scan: new directory maps records after mutation
+    [PASS] Directory scan: delete and move update directory mapping
+    [PASS] Directory scan: compaction preserves complete ordered results
+    [PASS] Directory scan: subtree rescan preserves complete ordered results
+  Part 69 summary: 58 passed, 0 failed
+╔══════════════════════════════════════════╗
+║  Final Summary                           ║
+╚══════════════════════════════════════════╝
+
+  Tests passed: 289
+  Tests failed: 0
+  Result:       ALL PASSED ✓
+
+ThreadSanitizer: reported 1 warnings

@@ -794,10 +794,10 @@ static void testV6Phase2ConcurrentQueries() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Test 12: inode/devId roundtrip
+// Test 12: inode/devId are written as zeros and not retained
 // ─────────────────────────────────────────────────────────────────────────────
 static void testV6InodeDevIdRoundtrip() {
-    std::cout << "\n--- v6: inode/devId roundtrip ---\n";
+    std::cout << "\n--- v6: inode/devId not retained ---\n";
 
     std::string tmpDir = (fs::temp_directory_path() / "test_v6_inode").string()
                          + "_" + std::to_string(getpid());
@@ -846,7 +846,7 @@ static void testV6InodeDevIdRoundtrip() {
 
     engine2->completePhase2();
 
-    // Verify each inode/devId value is preserved
+    // Search never reads inode or device IDs; the engine keeps neither.
     bool allMatch = true;
     for (uint32_t i = 0; i < testCases.size(); i++) {
         auto results = engine2->query("inode_test_" + std::to_string(i) + ".bin", 5);
@@ -854,16 +854,9 @@ static void testV6InodeDevIdRoundtrip() {
         for (uint32_t idx : results) {
             auto rec = engine2->getRecord(idx);
             if (rec.name == "inode_test_" + std::to_string(i) + ".bin") {
-                if (rec.inode != testCases[i].inode) {
-                    std::cout << "  INODE MISMATCH at i=" << i
-                              << ": expected=" << testCases[i].inode
-                              << " actual=" << rec.inode << "\n";
-                    allMatch = false;
-                }
-                if (rec.devId != testCases[i].devId) {
-                    std::cout << "  DEVID MISMATCH at i=" << i
-                              << ": expected=" << testCases[i].devId
-                              << " actual=" << rec.devId << "\n";
+                if (rec.inode != 0 || rec.devId != 0 || rec.size != i * 1000) {
+                    std::cout << "  MISMATCH at i=" << i << ": inode=" << rec.inode
+                              << " devId=" << rec.devId << " size=" << rec.size << "\n";
                     allMatch = false;
                 }
                 found = true;
@@ -875,7 +868,7 @@ static void testV6InodeDevIdRoundtrip() {
             allMatch = false;
         }
     }
-    check(allMatch, "V6-12: all inode/devId values preserved after roundtrip");
+    check(allMatch, "V6-12: records reload with zero inode/devId and intact metadata");
 
     fs::remove_all(tmpDir);
 }

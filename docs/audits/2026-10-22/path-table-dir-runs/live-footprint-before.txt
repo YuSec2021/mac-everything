@@ -1,0 +1,10 @@
+======================================================================
+MacEverything [25243]: 64-bit    Footprint: 836 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 422 MB        0 B          0 B         16    Malloc Large
+ 370 MB        0 B        77 MB        119    Malloc Small
+  19 MB        0 B          0 B          9    IOSurface
+3600 KB        0 B        48 KB         16    Malloc Metadata

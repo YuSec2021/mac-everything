@@ -51,16 +51,13 @@ void SearchEngine::treeWalkDown(uint32_t dirIdx, const ParsedQuery& pq,
     auto it = me::findPathRecord(lowerPathLookup_, fullDirPath, [this](uint32_t i) { return pathPool_.lower().view(i); });
     if (it == lowerPathLookup_.end()) return;
 
-    uint32_t childPathIdx = it->second;
-    if (childPathIdx >= pathIdxToRecords_.size()) return;
-    const auto& childRecords = pathIdxToRecords_[childPathIdx];
+    const auto childRecords = pathIdxToRecords_.collect(it->second, types_);
 
     if (fromSegIdx > toSegIdx) {
         // We've walked through all intermediate segments.
         // Now match children against namePattern.
         const auto& namePattern = pq.namePattern;
         for (uint32_t childIdx : childRecords) {
-            if (types_[childIdx] == 0) continue;
             const char* nd = names_.lower().data(childIdx);
             uint16_t nl = names_.lower().length(childIdx);
 
@@ -155,11 +152,8 @@ void SearchEngine::queryStructured(const ParsedQuery& pq,
         // Scan unique directory paths, then inspect only their records.
         // Lambda: check name match and emit result for records under pathIdx pi
         auto emitRecordsForPath = [&](uint32_t pi) {
-            if (pi >= pathIdxToRecords_.size()) return;
-            const auto& recIds = pathIdxToRecords_[pi];
-            for (uint32_t idx : recIds) {
+            for (uint32_t idx : pathIdxToRecords_.collect(pi, types_)) {
                 if (cancel.cancelled()) return;
-                if (types_[idx] == 0) continue;
 
                 const char* nd = names_.lower().data(idx);
                 uint16_t nl = names_.lower().length(idx);

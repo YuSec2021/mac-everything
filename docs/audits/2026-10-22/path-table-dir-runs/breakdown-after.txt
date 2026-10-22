@@ -1,0 +1,12 @@
+after load                   footprint=   387.9 in_use=   386.9 MiB
+after phase2                 footprint=   572.9 in_use=   580.1 MiB
+records=6460706 live=6381948 pathIndex entries=6381948 slots_mib=31.6 dirCanon_mib=2.7 dirRuns=712330 dirMap_mib=8.1
+drop pathIndex_+dirCanon_   -> in_use -34.4 MiB
+drop pathLookup+lower       -> in_use -14.2 MiB
+drop pathIdxToRecords_      -> in_use -8.1 MiB
+drop extensionIndex_        -> in_use -19.4 MiB
+drop nameTrigramIndex_      -> in_use -163.8 MiB
+drop names_                 -> in_use -218.9 MiB
+drop pathPool_              -> in_use -39.3 MiB
+drop soa                    -> in_use -80.1 MiB
+all dropped                  footprint=    25.3 in_use=     2.1 MiB

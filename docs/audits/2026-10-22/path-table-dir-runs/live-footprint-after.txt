@@ -1,0 +1,11 @@
+MacEverything [46169]: 64-bit    Footprint: 612 MB (16384 bytes per page)
+======================================================================
+
+  Dirty      Clean  Reclaimable    Regions    Category
+    ---        ---          ---        ---    ---
+ 386 MB        0 B          0 B         16    Malloc Large
+ 211 MB        0 B        73 MB         75    Malloc Small
+2608 KB        0 B       336 KB         14    Malloc Metadata
+2562 KB        0 B          0 B       1090    __DATA
+2434 KB        0 B          0 B        941    __DATA_DIRTY
+1106 KB        0 B          0 B          1    page table

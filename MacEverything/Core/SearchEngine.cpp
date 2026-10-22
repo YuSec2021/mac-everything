@@ -28,16 +28,116 @@ std::string SearchEngine::lowerFullPath(uint32_t index) const {
     return makeFullPath(pathPool_.lower().view(pathIndices_[index]), names_.lower().view(index));
 }
 
-me::CompactPathIndex::iterator SearchEngine::findPathRecord(std::string_view path) {
-    return me::findPathRecord(pathIndex_, path, [this](uint32_t i) { return lowerFullPath(i); });
+uint64_t SearchEngine::pathKeyHash(uint32_t canonDir, std::string_view lowerName) {
+    uint64_t h = std::hash<std::string_view>{}(lowerName) ^ (uint64_t(canonDir) * 0x9e3779b97f4a7c15ULL);
+    // splitmix64 finalizer: the table picks buckets from the high bits.
+    h ^= h >> 30; h *= 0xbf58476d1ce4e5b9ULL;
+    h ^= h >> 27; h *= 0x94d049bb133111ebULL;
+    return h ^ (h >> 31);
 }
 
-me::CompactPathIndex::const_iterator SearchEngine::findPathRecord(std::string_view path) const {
-    return me::findPathRecord(pathIndex_, path, [this](uint32_t i) { return lowerFullPath(i); });
+uint32_t SearchEngine::canonicalDir(const me::CompactPathIndex& lowerLookup, DirectoryPool::LowerView lower,
+                                    const std::vector<uint32_t>& canon, const std::string& lowerDir, uint32_t self) {
+    auto resolve = [&](uint32_t i) { return lower.view(i); };
+    auto it = me::findPathRecord(lowerLookup, lowerDir, resolve);
+    if (it != lowerLookup.end()) return canon[it->second];
+    // makeFullPath joins "a" and "a/" alike, so both spellings share an ID.
+    if (lowerDir.empty()) return self;
+    std::string alternate;
+    if (lowerDir.back() != '/') alternate = lowerDir + '/';
+    else if (lowerDir.size() >= 2 && lowerDir[lowerDir.size() - 2] != '/') alternate = lowerDir.substr(0, lowerDir.size() - 1);
+    else return self;
+    it = me::findPathRecord(lowerLookup, alternate, resolve);
+    return it != lowerLookup.end() ? canon[it->second] : self;
 }
 
-void SearchEngine::setPathRecord(std::string_view path, uint32_t index) {
-    me::setPathRecord(pathIndex_, path, index, [this](uint32_t i) { return lowerFullPath(i); });
+uint32_t SearchEngine::findPathRecord(std::string_view lowerFull) const {
+    const size_t slash = lowerFull.rfind('/');
+    const std::string_view name = slash == std::string_view::npos ? lowerFull : lowerFull.substr(slash + 1);
+    if (name.empty()) return kNoRecord;
+    // makeFullPath(dir, name) gives lowerFull for dir "prefix/" or "prefix", or "" without a slash.
+    const auto keys = pathKeys();
+    auto probe = [&](const std::string& dir, bool& dirFound) {
+        auto it = me::findPathRecord(lowerPathLookup_, dir, [this](uint32_t i) { return pathPool_.lower().view(i); });
+        dirFound = it != lowerPathLookup_.end();
+        if (!dirFound) return kNoRecord;
+        const uint32_t canon = dirCanon_[it->second];
+        return pathIndex_.find(pathKeyHash(canon, name), [&](uint32_t r) { return keys.matches(r, canon, name); });
+    };
+    bool dirFound = false;
+    if (slash == std::string_view::npos) return probe(std::string(), dirFound);
+    const uint32_t found = probe(std::string(lowerFull.substr(0, slash + 1)), dirFound);
+    // Both spellings share a canonical ID, so one existing directory settles it.
+    if (dirFound || slash == 0 || lowerFull[slash - 1] == '/') return found;
+    return probe(std::string(lowerFull.substr(0, slash)), dirFound);
+}
+
+void SearchEngine::setPathRecord(uint32_t index) {
+    const auto keys = pathKeys();
+    const uint32_t canon = dirCanon_[pathIndices_[index]];
+    const auto name = names_.lower().view(index);
+    pathIndex_.assign(pathKeyHash(canon, name), index,
+                      [&](uint32_t r) { return keys.matches(r, canon, name); },
+                      [&](uint32_t r) { return keys.hashOf(r); });
+}
+
+void SearchEngine::erasePathRecord(uint32_t index) {
+    if (pathIndex_.empty() || index >= pathIndices_.size()) return;
+    const auto keys = pathKeys();
+    const size_t slot = pathIndex_.slotOf(index, keys.hashOf(index));
+    if (slot != me::PathRecordTable::npos) pathIndex_.eraseSlot(slot, [&](uint32_t r) { return keys.hashOf(r); });
+}
+
+uint32_t SearchEngine::rebuildPathIndex() {
+    const auto keys = pathKeys();
+    const uint32_t n = static_cast<uint32_t>(types_.size());
+    pathIndex_.clear();
+    pathIndex_.reserve(n - static_cast<uint32_t>(std::count(types_.begin(), types_.end(), 0)),
+                       [&](uint32_t r) { return keys.hashOf(r); });
+    for (uint32_t i = 0; i < n; ++i) {
+        if (types_[i] != 0) setPathRecord(i);
+    }
+    // Tombstone orphaned duplicates: records not in pathIndex_ as winners
+    std::vector<bool> isWinner(n, false);
+    pathIndex_.forEach([&](uint32_t r) { isWinner[r] = true; });
+    uint32_t live = 0;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (types_[i] == 0) continue;
+        if (isWinner[i]) live++;
+        else tombstoneAt(i);
+    }
+    return live;
+}
+
+std::vector<uint32_t> SearchEngine::pathRecordsUnder(const std::string& lowerPrefix) const {
+    std::vector<uint32_t> matches;
+    pathIndex_.forEach([&](uint32_t idx) {
+        const auto path = lowerFullPath(idx);
+        if (path.size() >= lowerPrefix.size() &&
+            path.compare(0, lowerPrefix.size(), lowerPrefix) == 0 &&
+            (path.size() == lowerPrefix.size() || path[lowerPrefix.size()] == '/')) {
+            matches.push_back(idx);
+        }
+    });
+    // Removing while iterating would shift entries, so callers mutate afterwards.
+    std::sort(matches.begin(), matches.end());
+    return matches;
+}
+
+void SearchEngine::rebuildDirLookups() {
+    pathLookup_.clear();
+    lowerPathLookup_.clear();
+    const auto lower = pathPool_.lower();
+    dirCanon_.resize(pathPool_.entryCount());
+    for (uint32_t i = 0; i < pathPool_.entryCount(); i++) {
+        dirCanon_[i] = i;
+        if (!pathPool_.isLive(i)) continue;
+        me::setPathRecord(pathLookup_, pathPool_.view(i), i,
+                          [this](uint32_t j) { return pathPool_.view(j); });
+        const auto lowerDir = lower.view(i);
+        dirCanon_[i] = canonicalDir(lowerPathLookup_, lower, dirCanon_, lowerDir, i);
+        me::setPathRecord(lowerPathLookup_, lowerDir, i, [&](uint32_t j) { return lower.view(j); });
+    }
 }
 
 uint32_t SearchEngine::internPath(const std::string& path) {
@@ -45,18 +145,21 @@ uint32_t SearchEngine::internPath(const std::string& path) {
     if (it != pathLookup_.end()) return it->second;
     uint32_t pIdx = pathPool_.append(path);
     pathLookup_.emplace(me::PathHash{}(path), pIdx);
-    me::setPathRecord(lowerPathLookup_, pathPool_.lower().view(pIdx), pIdx,
+    const auto lowerDir = pathPool_.lower().view(pIdx);
+    me::reserveForAppend(dirCanon_);
+    dirCanon_.resize(pIdx + 1, pIdx);
+    dirCanon_[pIdx] = canonicalDir(lowerPathLookup_, pathPool_.lower(), dirCanon_, lowerDir, pIdx);
+    me::setPathRecord(lowerPathLookup_, lowerDir, pIdx,
                       [this](uint32_t i) { return pathPool_.lower().view(i); });
     return pIdx;
 }
 
 void SearchEngine::tombstoneAt(uint32_t idx) {
+    erasePathRecord(idx); // needs the record's name, cleared below
     types_[idx] = 0;
     markPageDirty(idx);
     sizes_.set(idx, 0);
     modTimes_.set(idx, 0);
-    if (idx < inodes_.size()) inodes_[idx] = 0;
-    if (idx < devIds_.size()) devIds_.set(idx, 0);
     names_.tombstone(idx);
 }
 
@@ -64,14 +167,10 @@ void SearchEngine::pushRecord(FileRecord&& rec) {
     me::reserveForAppend(types_);
     me::reserveForAppend(sizes_);
     me::reserveForAppend(modTimes_);
-    me::reserveForAppend(inodes_);
-    me::reserveForAppend(devIds_);
     me::reserveForAppend(pathIndices_);
     types_.push_back(rec.type);
     sizes_.push_back(rec.size);
     modTimes_.push_back(static_cast<int64_t>(rec.modTime));
-    inodes_.push_back(rec.inode);
-    devIds_.push_back(rec.devId);
 }
 
 void SearchEngine::loadRecords(std::vector<FileRecord>&& records) {
@@ -84,14 +183,10 @@ void SearchEngine::loadRecords(std::vector<FileRecord>&& records) {
     types_.resize(n);
     sizes_.resize(n);
     modTimes_.resize(n);
-    inodes_.resize(n);
-    devIds_.resize(n);
     for (size_t i = 0; i < n; i++) {
         types_[i] = records[i].type;
         sizes_.set(i, records[i].size);
         modTimes_.set(i, static_cast<int64_t>(records[i].modTime));
-        inodes_[i] = records[i].inode;
-        devIds_.set(i, records[i].devId);
     }
 
     // Pre-compute lowercase names into a temporary vector (parallel),
@@ -127,31 +222,14 @@ void SearchEngine::loadRecords(std::vector<FileRecord>&& records) {
     pathPool_.clear();
     pathLookup_.clear();
     lowerPathLookup_.clear();
+    dirCanon_.clear();
+    pathIndex_.clear();
     pathIndices_.resize(n);
     for (size_t i = 0; i < n; i++) {
         pathIndices_[i] = internPath(records[i].path);
     }
 
-    pathIndex_.clear();
-    pathIndex_.reserve(n);
-    for (uint32_t i = 0; i < n; ++i) {
-        if (types_[i] != 0) setPathRecord(lowerFullPath(i), i);
-    }
-
-    // Tombstone orphaned duplicates: records not in pathIndex_ as winners
-    std::vector<bool> isWinner(n, false);
-    for (const auto& [_, idx] : pathIndex_) {
-        isWinner[idx] = true;
-    }
-    uint32_t actualLive = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (types_[i] == 0) continue;
-        if (isWinner[i]) {
-            actualLive++;
-        } else {
-            tombstoneAt(static_cast<uint32_t>(i));
-        }
-    }
+    uint32_t actualLive = rebuildPathIndex();
 
     // Build trigram index for fast filename search
     buildTrigramIndex();
@@ -182,14 +260,10 @@ void SearchEngine::loadRecordsV5(std::vector<FileRecord>&& records,
     types_.resize(n);
     sizes_.resize(n);
     modTimes_.resize(n);
-    inodes_.resize(n);
-    devIds_.resize(n);
     for (size_t i = 0; i < n; i++) {
         types_[i] = records[i].type;
         sizes_.set(i, records[i].size);
         modTimes_.set(i, static_cast<int64_t>(records[i].modTime));
-        inodes_[i] = records[i].inode;
-        devIds_.set(i, records[i].devId);
     }
 
     names_.clear();
@@ -210,35 +284,9 @@ void SearchEngine::loadRecordsV5(std::vector<FileRecord>&& records,
     lowerPathLookup_.clear();
     pathLookup_.reserve(pathPool_.entryCount());
     lowerPathLookup_.reserve(pathPool_.entryCount());
-    for (uint32_t i = 0; i < pathPool_.entryCount(); i++) {
-        if (pathPool_.isLive(i)) {
-            me::setPathRecord(pathLookup_, pathPool_.view(i), i,
-                              [this](uint32_t j) { return pathPool_.view(j); });
-            me::setPathRecord(lowerPathLookup_, pathPool_.lower().view(i), i,
-                              [this](uint32_t j) { return pathPool_.lower().view(j); });
-        }
-    }
+    rebuildDirLookups();
 
-    pathIndex_.clear();
-    pathIndex_.reserve(n);
-    for (uint32_t i = 0; i < n; ++i) {
-        if (types_[i] != 0) setPathRecord(lowerFullPath(i), i);
-    }
-
-    // Tombstone orphaned duplicates
-    std::vector<bool> isWinner(n, false);
-    for (const auto& [_, idx] : pathIndex_) {
-        isWinner[idx] = true;
-    }
-    uint32_t actualLive = 0;
-    for (size_t i = 0; i < n; i++) {
-        if (types_[i] == 0) continue;
-        if (isWinner[i]) {
-            actualLive++;
-        } else {
-            tombstoneAt(static_cast<uint32_t>(i));
-        }
-    }
+    uint32_t actualLive = rebuildPathIndex();
 
     // Build trigram index for fast filename search
     buildTrigramIndex();
@@ -264,8 +312,6 @@ FileRecord SearchEngine::getRecord(uint32_t index) const {
     r.path = pathPool_.str(pathIndices_[index]);
     r.size = sizes_[index];
     r.modTime = static_cast<time_t>(modTimes_[index]);
-    r.inode = inodes_[index];
-    r.devId = devIds_[index];
     return r;
 }
 
@@ -285,14 +331,11 @@ uint32_t SearchEngine::addRecord(FileRecord&& record) {
     if (wal_) wal_->append(WALOp::Add, fullPath, record);
 
     // Tombstone existing record at same path to prevent orphaned duplicates
-    auto existIt = findPathRecord(lowerFull);
-    if (existIt != pathIndex_.end()) {
-        uint32_t oldIdx = existIt->second;
+    if (const uint32_t oldIdx = findPathRecord(lowerFull); oldIdx != kNoRecord) {
         time_t oldModTime = static_cast<time_t>(modTimes_[oldIdx]);
         removeTrigramsForRecord(oldIdx);
         removePathRecord(oldIdx);
         tombstoneAt(oldIdx);
-        pathIndex_.erase(existIt);
         liveCount_.fetch_sub(1, std::memory_order_relaxed);
         removeFromRecentCache(oldIdx, oldModTime);
     }
@@ -305,7 +348,7 @@ uint32_t SearchEngine::addRecord(FileRecord&& record) {
     names_.append(record.name, lower);
     pushRecord(std::move(record));
     pathIndices_.push_back(pIdx);
-    setPathRecord(lowerFull, idx);
+    setPathRecord(idx);
 
     // Update trigram index
     addTrigramsForRecord(idx, names_.lower().data(idx), names_.lower().length(idx));
@@ -325,18 +368,16 @@ uint32_t SearchEngine::addRecord(FileRecord&& record) {
 }
 
 bool SearchEngine::removeByPathUnlocked(const std::string& fullPath) {
-    auto it = findPathRecord(me::toLower(fullPath));
-    if (it == pathIndex_.end()) return false;
+    const uint32_t idx = findPathRecord(me::toLower(fullPath));
+    if (idx == kNoRecord) return false;
 
     if (wal_) wal_->append(WALOp::Remove, fullPath);
 
-    uint32_t idx = it->second;
     time_t oldModTime = static_cast<time_t>(modTimes_[idx]);
     removeTrigramsForRecord(idx);
     removePathRecord(idx);
     removeExtensionForRecord(idx);
     tombstoneAt(idx);
-    pathIndex_.erase(it);
 
     liveCount_.fetch_sub(1, std::memory_order_relaxed);
     removeFromRecentCache(idx, oldModTime);
@@ -354,32 +395,22 @@ uint32_t SearchEngine::removeByPathPrefix(const std::string& pathPrefix) {
 
     std::string lowerPrefix = me::toLower(pathPrefix);
     uint32_t removed = 0;
-    for (auto it = pathIndex_.begin(); it != pathIndex_.end(); ) {
-        const auto path = lowerFullPath(it->second);
-        if (path.size() >= lowerPrefix.size() &&
-            path.compare(0, lowerPrefix.size(), lowerPrefix) == 0 &&
-            (path.size() == lowerPrefix.size() || path[lowerPrefix.size()] == '/')) {
-            uint32_t idx = it->second;
-
-            // H-4: Write WAL entry for each removed path
-            if (wal_) {
-                std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
-                wal_->append(WALOp::Remove, fullPath);
-            }
-
-            time_t oldModTime = static_cast<time_t>(modTimes_[idx]);
-            // Clean up trigram index (must happen before clearing names_.lower())
-            removeTrigramsForRecord(idx);
-            removePathRecord(idx);
-            removeExtensionForRecord(idx);
-            tombstoneAt(idx);
-            liveCount_.fetch_sub(1, std::memory_order_relaxed);
-            removeFromRecentCache(idx, oldModTime);
-            it = pathIndex_.erase(it);
-            removed++;
-        } else {
-            ++it;
+    for (uint32_t idx : pathRecordsUnder(lowerPrefix)) {
+        // H-4: Write WAL entry for each removed path
+        if (wal_) {
+            std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
+            wal_->append(WALOp::Remove, fullPath);
         }
+
+        time_t oldModTime = static_cast<time_t>(modTimes_[idx]);
+        // Clean up trigram index (must happen before clearing names_.lower())
+        removeTrigramsForRecord(idx);
+        removePathRecord(idx);
+        removeExtensionForRecord(idx);
+        tombstoneAt(idx);
+        liveCount_.fetch_sub(1, std::memory_order_relaxed);
+        removeFromRecentCache(idx, oldModTime);
+        removed++;
     }
 
     return removed;
@@ -393,29 +424,19 @@ uint32_t SearchEngine::batchRescanPrefix(const std::string& pathPrefix,
     // Remove trigrams incrementally for each tombstoned record.
     std::string lowerPrefix = me::toLower(pathPrefix);
     uint32_t removed = 0;
-    for (auto it = pathIndex_.begin(); it != pathIndex_.end(); ) {
-        const auto path = lowerFullPath(it->second);
-        if (path.size() >= lowerPrefix.size() &&
-            path.compare(0, lowerPrefix.size(), lowerPrefix) == 0 &&
-            (path.size() == lowerPrefix.size() || path[lowerPrefix.size()] == '/')) {
-            uint32_t idx = it->second;
-
-            // Write WAL Remove entry for each removed path
-            if (wal_) {
-                std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
-                wal_->append(WALOp::Remove, fullPath);
-            }
-
-            removeTrigramsForRecord(idx);
-            removePathRecord(idx);
-            removeExtensionForRecord(idx);
-            tombstoneAt(idx);
-            liveCount_.fetch_sub(1, std::memory_order_relaxed);
-            it = pathIndex_.erase(it);
-            removed++;
-        } else {
-            ++it;
+    for (uint32_t idx : pathRecordsUnder(lowerPrefix)) {
+        // Write WAL Remove entry for each removed path
+        if (wal_) {
+            std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
+            wal_->append(WALOp::Remove, fullPath);
         }
+
+        removeTrigramsForRecord(idx);
+        removePathRecord(idx);
+        removeExtensionForRecord(idx);
+        tombstoneAt(idx);
+        liveCount_.fetch_sub(1, std::memory_order_relaxed);
+        removed++;
     }
 
     // ── Phase 2: Add fresh records with incremental trigram insertion ──
@@ -433,7 +454,7 @@ uint32_t SearchEngine::batchRescanPrefix(const std::string& pathPrefix,
         names_.append(record.name, lower);
         pushRecord(std::move(record));
         pathIndices_.push_back(pIdx);
-        setPathRecord(me::toLower(fullPath), newIdx);
+        setPathRecord(newIdx);
         addTrigramsForRecord(newIdx, names_.lower().data(newIdx), names_.lower().length(newIdx));
         addPathRecord(newIdx);
         addExtensionForRecord(newIdx);
@@ -454,23 +475,19 @@ void SearchEngine::updateByPathUnlocked(const std::string& fullPath, FileRecord&
     if (wal_) wal_->append(WALOp::Update, fullPath, updated);
 
     // Remove old record if exists (case-insensitive lookup)
-    auto it = findPathRecord(me::toLower(fullPath));
-    if (it != pathIndex_.end()) {
-        uint32_t idx = it->second;
+    if (const uint32_t idx = findPathRecord(me::toLower(fullPath)); idx != kNoRecord) {
         time_t oldModTime = static_cast<time_t>(modTimes_[idx]);
         // Clean up trigram index (must happen before tombstoning names_.lower())
         removeTrigramsForRecord(idx);
         removePathRecord(idx);
         removeExtensionForRecord(idx);
         tombstoneAt(idx);
-        pathIndex_.erase(it);
         liveCount_.fetch_sub(1, std::memory_order_relaxed);
         removeFromRecentCache(idx, oldModTime);
     }
 
     // Add new record
     uint32_t newIdx = static_cast<uint32_t>(types_.size());
-    std::string newFullPath = makeFullPath(updated.path, updated.name);
     std::string lower = me::toLower(updated.name);
 
     // Intern path before moving record
@@ -481,7 +498,7 @@ void SearchEngine::updateByPathUnlocked(const std::string& fullPath, FileRecord&
     names_.append(updated.name, lower);
     pushRecord(std::move(updated));
     pathIndices_.push_back(pIdx);
-    setPathRecord(me::toLower(newFullPath), newIdx);
+    setPathRecord(newIdx);
     addTrigramsForRecord(newIdx, names_.lower().data(newIdx), names_.lower().length(newIdx));
     addPathRecord(newIdx);
     addExtensionForRecord(newIdx);
@@ -516,14 +533,13 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     std::vector<uint8_t> snapTypes;
     SizeColumn snapSizes;
     ModTimeColumn snapModTimes;
-    std::vector<uint64_t> snapInodes;
-    DevIdColumn snapDevIds;
     FoldedNamePool snapNames;
     const auto snapNamePool = snapNames.lower();
     const auto snapOrigNamePool = snapNames.original();
     std::vector<uint32_t> snapPathIndices;
     DirectoryPool snapPathPool;
-    me::CompactPathIndex snapPathIndex;
+    me::PathRecordTable snapPathIndex;
+    std::vector<uint32_t> snapDirCanon;
     uint32_t snapSize;
     {
         std::shared_lock lock(mutex_);
@@ -532,14 +548,16 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
         snapTypes = types_;
         snapSizes = sizes_;
         snapModTimes = modTimes_;
-        snapInodes = inodes_;
-        snapDevIds = devIds_;
         snapNames = names_;
         snapPathIndices = pathIndices_;
         snapPathPool = pathPool_;
         snapPathIndex = pathIndex_;
+        snapDirCanon = dirCanon_;
         snapSize = static_cast<uint32_t>(types_.size());
     }
+    // Live records not referenced by pathIndex_ are orphaned duplicates.
+    std::vector<bool> snapWinner(snapSize, false);
+    snapPathIndex.forEach([&](uint32_t r) { snapWinner[r] = true; });
 
     LOG_INFO("SearchEngine", "COW compaction Phase 2: building compacted data from "
              << snapSize << " records");
@@ -553,13 +571,9 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     std::vector<uint8_t> cdTypes;
     SizeColumn cdSizes;
     ModTimeColumn cdModTimes;
-    std::vector<uint64_t> cdInodes;
-    DevIdColumn cdDevIds;
     cdTypes.reserve(snapSize);
     cdSizes.reserve(snapSize);
     cdModTimes.reserve(snapSize);
-    cdInodes.reserve(snapSize);
-    cdDevIds.reserve(snapSize);
     FoldedNamePool cdNames;
     const auto cdNamePool = cdNames.lower();
     const auto cdOrigNamePool = cdNames.original();
@@ -569,19 +583,11 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     const auto cdLowerPathPool = cdPathPool.lower();
     me::CompactPathIndex cdPathLookup;
     me::CompactPathIndex cdLowerPathLookup;
-    me::CompactPathIndex cdPathIndex;
-    cdPathIndex.reserve(snapSize);
+    std::vector<uint32_t> cdDirCanon;
 
     for (size_t i = 0; i < snapSize; i++) {
-        if (snapTypes[i] == 0) continue;
-        // Skip orphaned duplicates: live records not referenced by pathIndex_
+        if (snapTypes[i] == 0 || !snapWinner[i]) continue;
         std::string origPath = snapPathPool.str(snapPathIndices[i]);
-        std::string snapName = snapOrigNamePool.str(i);
-        std::string fullPathLower = me::toLower(makeFullPath(origPath, snapName));
-        auto pathIt = me::findPathRecord(snapPathIndex, fullPathLower, [&](uint32_t idx) {
-            return me::toLower(makeFullPath(snapPathPool.view(snapPathIndices[idx]), snapOrigNamePool.view(idx)));
-        });
-        if (pathIt == snapPathIndex.end() || pathIt->second != static_cast<uint32_t>(i)) continue;
         uint32_t newIdx = static_cast<uint32_t>(cdTypes.size());
         remap[static_cast<uint32_t>(i)] = newIdx;
         // Intern path into compacted pool (both original and lowered)
@@ -592,26 +598,35 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
         } else {
             newPIdx = cdPathPool.append(origPath);
             cdPathLookup.emplace(me::PathHash{}(origPath), newPIdx);
-            me::setPathRecord(cdLowerPathLookup, cdLowerPathPool.view(newPIdx), newPIdx,
+            const auto lowerDir = cdLowerPathPool.view(newPIdx);
+            cdDirCanon.resize(newPIdx + 1, newPIdx);
+            cdDirCanon[newPIdx] = canonicalDir(cdLowerPathLookup, cdLowerPathPool, cdDirCanon, lowerDir, newPIdx);
+            me::setPathRecord(cdLowerPathLookup, lowerDir, newPIdx,
                               [&](uint32_t i) { return cdLowerPathPool.view(i); });
         }
-        cdPathIndex.emplace(me::PathHash{}(fullPathLower), newIdx);
         // Copy name from snapshot pool into compacted pool
         cdNames.append(snapOrigNamePool.view(i), snapNamePool.view(i));
         cdPathIndices.push_back(newPIdx);
         cdTypes.push_back(snapTypes[i]);
         cdSizes.push_back(snapSizes[i]);
         cdModTimes.push_back(snapModTimes[i]);
-        cdInodes.push_back(snapInodes[i]);
-        cdDevIds.push_back(snapDevIds[i]);
     }
     uint32_t cdLiveCount = static_cast<uint32_t>(cdTypes.size());
+    me::PathRecordTable cdPathIndex;
+    {
+        const PathKeys keys{cdNamePool, cdPathIndices, cdDirCanon};
+        auto hashOf = [&](uint32_t r) { return keys.hashOf(r); };
+        cdPathIndex.reserve(cdLiveCount, hashOf);
+        for (uint32_t r = 0; r < cdLiveCount; ++r) {
+            const uint32_t canon = cdDirCanon[cdPathIndices[r]];
+            const auto name = cdNamePool.view(r);
+            cdPathIndex.assign(keys.hashOf(r), r, [&](uint32_t o) { return keys.matches(o, canon, name); }, hashOf);
+        }
+    }
     // These snapshot columns are no longer needed for the replay step.
     std::vector<uint8_t>{}.swap(snapTypes);
     SizeColumn{}.swap(snapSizes);
     ModTimeColumn{}.swap(snapModTimes);
-    std::vector<uint64_t>{}.swap(snapInodes);
-    DevIdColumn{}.swap(snapDevIds);
 
     // Build trigram index, path trigram index, extension index, and recent cache outside any lock
     auto cdTrigramIndex = buildTrigramIndexFromData(cdTypes, cdNamePool);
@@ -632,8 +647,6 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
         auto oldTypes = std::move(types_);
         auto oldSizes = std::move(sizes_);
         auto oldModTimes = std::move(modTimes_);
-        auto oldInodes = std::move(inodes_);
-        auto oldDevIds = std::move(devIds_);
         auto oldNames = std::move(names_);
         const auto oldOrigNamePool = oldNames.original();
         const auto oldNamePool = oldNames.lower();
@@ -642,19 +655,19 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
         auto oldPathLookup = std::move(pathLookup_);
         auto oldLowerPathLookup = std::move(lowerPathLookup_);
         auto oldPathIndex = std::move(pathIndex_);
+        auto oldDirCanon = std::move(dirCanon_);
 
         // Install compacted data
         types_ = std::move(cdTypes);
         sizes_ = std::move(cdSizes);
         modTimes_ = std::move(cdModTimes);
-        inodes_ = std::move(cdInodes);
-        devIds_ = std::move(cdDevIds);
         names_ = std::move(cdNames);
         pathIndices_ = std::move(cdPathIndices);
         pathPool_ = std::move(cdPathPool);
         pathLookup_ = std::move(cdPathLookup);
         lowerPathLookup_ = std::move(cdLowerPathLookup);
         pathIndex_ = std::move(cdPathIndex);
+        dirCanon_ = std::move(cdDirCanon);
         nameTrigramIndex_ = std::move(cdTrigramIndex);
         pathIdxToRecords_ = std::move(cdPathIdxToRecords);
         extensionIndex_ = std::move(cdExtensionIndex);
@@ -667,20 +680,16 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
             uint32_t newIdx = static_cast<uint32_t>(types_.size());
             std::string origPath = oldPathPool.str(oldPathIndices[i]);
             uint32_t pIdx = internPath(origPath);
-            std::string origName = oldOrigNamePool.str(i);
-            std::string fullPath = me::toLower(makeFullPath(origPath, origName));
             // Copy name from old pool into current pool
             names_.append(oldOrigNamePool.view(i), oldNamePool.view(i));
             pathIndices_.push_back(pIdx);
-            setPathRecord(fullPath, newIdx);
+            setPathRecord(newIdx);
             addTrigramsForRecord(newIdx, names_.lower().data(newIdx), names_.lower().length(newIdx));
             addToRecentCache(newIdx, static_cast<time_t>(oldModTimes[i]));
             // Push SoA columns for replayed record
             types_.push_back(oldTypes[i]);
             sizes_.push_back(oldSizes[i]);
             modTimes_.push_back(oldModTimes[i]);
-            inodes_.push_back(oldInodes[i]);
-            devIds_.push_back(oldDevIds[i]);
             addPathRecord(newIdx);
             addExtensionForRecord(newIdx);
             cdLiveCount++;
@@ -688,30 +697,30 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
         }
 
         // Replay tombstones: paths in snapshot but removed during Phase 2
+        // Snapshot and old data share record and directory IDs below snapSize,
+        // and canonical directory IDs never change, so snapshot keys probe old data.
         uint32_t replayedDeletes = 0;
-        for (auto& [hash, snapIdx] : snapPathIndex) {
-            const auto path = me::toLower(makeFullPath(snapPathPool.view(snapPathIndices[snapIdx]), snapOrigNamePool.view(snapIdx)));
-            auto oldIt = me::findPathRecord(oldPathIndex, path, [&](uint32_t idx) {
-                return me::toLower(makeFullPath(oldPathPool.view(oldPathIndices[idx]), oldOrigNamePool.view(idx)));
-            });
-            if (oldIt != oldPathIndex.end()) continue;
+        const PathKeys oldKeys{oldNamePool, oldPathIndices, oldDirCanon};
+        snapPathIndex.forEach([&](uint32_t snapIdx) {
+            const uint32_t canon = snapDirCanon[snapPathIndices[snapIdx]];
+            const auto name = snapNamePool.view(snapIdx);
+            if (oldPathIndex.find(pathKeyHash(canon, name),
+                                  [&](uint32_t r) { return oldKeys.matches(r, canon, name); }) != kNoRecord) return;
             // This path was deleted during Phase 2
             auto it = remap.find(snapIdx);
-            if (it == remap.end()) continue; // was already tombstoned in snapshot
+            if (it == remap.end()) return; // was already tombstoned in snapshot
             uint32_t newIdx = it->second;
             if (newIdx < types_.size() && types_[newIdx] != 0) {
                 removeTrigramsForRecord(newIdx);
                 removePathRecord(newIdx);
                 removeExtensionForRecord(newIdx);
                 time_t oldMod = static_cast<time_t>(modTimes_[newIdx]);
-                auto pathIt = findPathRecord(path);
-                if (pathIt != pathIndex_.end()) pathIndex_.erase(pathIt);
                 tombstoneAt(newIdx);
                 removeFromRecentCache(newIdx, oldMod);
                 cdLiveCount--;
                 replayedDeletes++;
             }
-        }
+        });
 
         liveCount_.store(cdLiveCount, std::memory_order_relaxed);
         compactionGen_.fetch_add(1, std::memory_order_relaxed);
@@ -787,8 +796,7 @@ void SearchEngine::removeFromRecentCache(uint32_t idx, time_t modTime) {
 
 uint32_t SearchEngine::indexForPath(const std::string& fullPath) const {
     std::shared_lock lock(mutex_);
-    auto it = findPathRecord(me::toLower(fullPath));
-    return (it != pathIndex_.end()) ? it->second : UINT32_MAX;
+    return findPathRecord(me::toLower(fullPath));
 }
 
 std::vector<FileRecord> SearchEngine::exportRecords() const {
@@ -802,8 +810,6 @@ std::vector<FileRecord> SearchEngine::exportRecords() const {
         r.type = types_[i];
         r.size = sizes_[i];
         r.modTime = static_cast<time_t>(modTimes_[i]);
-        r.inode = inodes_[i];
-        r.devId = devIds_[i];
         r.path = pathPool_.str(pathIndices_[i]);
         result.push_back(std::move(r));
     }
@@ -821,14 +827,11 @@ void SearchEngine::replayWALEntries(std::vector<WALEntry>&& entries) {
         switch (e.op) {
         case WALOp::Add: {
             // If path already exists (duplicate Add), tombstone old record first
-            auto existIt = findPathRecord(lowerFull);
-            if (existIt != pathIndex_.end()) {
-                uint32_t oldIdx = existIt->second;
+            if (const uint32_t oldIdx = findPathRecord(lowerFull); oldIdx != kNoRecord) {
                 removeTrigramsForRecord(oldIdx);
                 removePathRecord(oldIdx);
                 removeExtensionForRecord(oldIdx);
                 tombstoneAt(oldIdx);
-                pathIndex_.erase(existIt);
                 liveCount_.fetch_sub(1, std::memory_order_relaxed);
             }
 
@@ -841,7 +844,7 @@ void SearchEngine::replayWALEntries(std::vector<WALEntry>&& entries) {
             names_.append(e.record.name, lower);
             pushRecord(std::move(e.record));
             pathIndices_.push_back(pIdx);
-            setPathRecord(lowerFull, idx);
+            setPathRecord(idx);
             addTrigramsForRecord(idx, names_.lower().data(idx), names_.lower().length(idx));
             addPathRecord(idx);
             addExtensionForRecord(idx);
@@ -853,27 +856,22 @@ void SearchEngine::replayWALEntries(std::vector<WALEntry>&& entries) {
             break;
         }
         case WALOp::Remove: {
-            auto it = findPathRecord(lowerFull);
-            if (it == pathIndex_.end()) break; // silently ignore
-            uint32_t idx = it->second;
+            const uint32_t idx = findPathRecord(lowerFull);
+            if (idx == kNoRecord) break; // silently ignore
             removeTrigramsForRecord(idx);
             removePathRecord(idx);
             removeExtensionForRecord(idx);
             tombstoneAt(idx);
-            pathIndex_.erase(it);
             liveCount_.fetch_sub(1, std::memory_order_relaxed);
             break;
         }
         case WALOp::Update: {
             // Remove old record if exists
-            auto it = findPathRecord(lowerFull);
-            if (it != pathIndex_.end()) {
-                uint32_t oldIdx = it->second;
+            if (const uint32_t oldIdx = findPathRecord(lowerFull); oldIdx != kNoRecord) {
                 removeTrigramsForRecord(oldIdx);
                 removePathRecord(oldIdx);
                 removeExtensionForRecord(oldIdx);
                 tombstoneAt(oldIdx);
-                pathIndex_.erase(it);
                 liveCount_.fetch_sub(1, std::memory_order_relaxed);
             }
             // Add updated record
@@ -886,7 +884,7 @@ void SearchEngine::replayWALEntries(std::vector<WALEntry>&& entries) {
             names_.append(e.record.name, lower);
             pushRecord(std::move(e.record));
             pathIndices_.push_back(pIdx);
-            setPathRecord(lowerFull, newIdx);
+            setPathRecord(newIdx);
             addTrigramsForRecord(newIdx, names_.lower().data(newIdx), names_.lower().length(newIdx));
             addPathRecord(newIdx);
             addExtensionForRecord(newIdx);

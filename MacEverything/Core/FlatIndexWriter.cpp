@@ -133,6 +133,18 @@ bool FlatIndexWriter::writeArraySection(FILE* f, const std::vector<T>& vec,
     return true;
 }
 
+namespace {
+// Search never reads inode or device IDs, so the engine does not keep them;
+// v6 still carries both sections, written as zeros for older readers.
+template<typename T>
+struct ZeroColumn {
+    using value_type = T;
+    size_t count;
+    size_t size() const { return count; }
+    T operator[](size_t) const { return 0; }
+};
+}
+
 template<typename Column>
 bool FlatIndexWriter::writeColumnSection(FILE* f, const Column& column,
                                           uint32_t& outSize, uint32_t& outCRC) {
@@ -327,7 +339,7 @@ bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& met
     {
         uint64_t offset = static_cast<uint64_t>(ftell(f));
         uint32_t size, crc;
-        ok = ok && writeArraySection(f, snap.inodes, size, crc);
+        ok = ok && writeColumnSection(f, ZeroColumn<uint64_t>{snap.types.size()}, size, crc);
         fillSection(8, kSectionInodes, offset, size, crc);
     }
 
@@ -335,7 +347,7 @@ bool FlatIndexWriter::fullRewrite(SearchEngine& engine, const IndexMetadata& met
     {
         uint64_t offset = static_cast<uint64_t>(ftell(f));
         uint32_t size, crc;
-        ok = ok && writeColumnSection(f, snap.devIds, size, crc);
+        ok = ok && writeColumnSection(f, ZeroColumn<int32_t>{snap.types.size()}, size, crc);
         fillSection(9, kSectionDevIds, offset, size, crc);
     }
 
@@ -555,15 +567,12 @@ bool FlatIndexWriter::load(SearchEngine& engine, IndexMetadata* outMeta) {
     std::vector<uint8_t> types;
     std::vector<uint64_t> sizes;
     std::vector<int64_t> modTimes;
-    std::vector<uint64_t> inodes;
-    std::vector<int32_t> devIds;
 
     if (!readArrayDirect(kSectionPathIndices, pathIndices, n, "PATH_INDICES")) { fclose(f); return false; }
     if (!readArrayDirect(kSectionTypes, types, n, "TYPES")) { fclose(f); return false; }
     if (!readArrayDirect(kSectionSizes, sizes, n, "SIZES")) { fclose(f); return false; }
     if (!readArrayDirect(kSectionModTimes, modTimes, n, "MOD_TIMES")) { fclose(f); return false; }
-    if (!readArrayDirect(kSectionInodes, inodes, n, "INODES")) { fclose(f); return false; }
-    if (!readArrayDirect(kSectionDevIds, devIds, n, "DEV_IDS")) { fclose(f); return false; }
+    // INODES and DEV_IDS sections are not loaded: the engine does not keep them.
 
     for (uint32_t path : pathIndices) {
         if (path >= pathPool.entryCount()) { fclose(f); return false; }
@@ -595,9 +604,7 @@ bool FlatIndexWriter::load(SearchEngine& engine, IndexMetadata* outMeta) {
         std::move(lowerPathPool),
         std::move(types),
         std::move(sizes),
-        std::move(modTimes),
-        std::move(inodes),
-        std::move(devIds)
+        std::move(modTimes)
     );
 
     LOG_INFO("FlatIndexWriter", "v6 loaded: " << n << " records, lastEventId="

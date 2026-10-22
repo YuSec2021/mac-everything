@@ -703,20 +703,19 @@ std::vector<uint32_t> SearchEngine::queryAdvanced(const std::string& input,
             pathOk = true;
             for (uint32_t pi = 0; pi < pathPool_.lower().entryCount(); ++pi) {
                 if (genPtr->load(std::memory_order_relaxed) != myGen) return {};
-                if (!pathPool_.lower().isLive(pi) || pi >= pathIdxToRecords_.size()) continue;
+                if (!pathPool_.lower().isLive(pi)) continue;
                 bool matches = true;
                 for (const auto* constraint : constraints) {
                     if (!pathPool_.matchesSegments(pi, constraint->pathSegments)) { matches = false; break; }
                 }
                 if (!matches) continue;
-                const auto& records = pathIdxToRecords_[pi];
+                pathIdxToRecords_.forEach(pi, types_, [&](uint32_t idx) { pathCands.push_back(idx); });
                 // Broad paths are cheaper to evaluate directly and need no candidate copy.
-                if (pathCands.size() + records.size() > totalSize / 4) {
+                if (pathCands.size() > totalSize / 4) {
                     pathOk = false;
                     pathCands.clear();
                     break;
                 }
-                pathCands.insert(pathCands.end(), records.begin(), records.end());
             }
             afterTrigram = std::chrono::steady_clock::now();
         }

@@ -49,17 +49,6 @@ static void runMemoryOptimizationTests() {
               && times[4] == int64_t(UINT32_MAX) && times.overflowCount() == 3,
               "NarrowColumn: negative and out-of-range modification times keep exact values");
 
-        SearchEngine::DevIdColumn devs;
-        for (int32_t i = 0; i < 300; ++i) devs.push_back(i * 7919 - 1000);
-        bool exact = true;
-        for (int32_t i = 0; i < 300; ++i) exact = exact && devs[i] == i * 7919 - 1000;
-        check(exact && devs.dictionarySize() == 255 && devs.overflowCount() == 45,
-              "DictColumn: device IDs past 255 distinct values keep exact values");
-        devs.set(299, 0 * 7919 - 1000);
-        devs.set(0, 12345);
-        check(devs[299] == -1000 && devs[0] == 12345 && devs.overflowCount() == 45,
-              "DictColumn: set reuses dictionary codes and falls back to the side map");
-
         // 32-bit keys must be produced the same way on insert and lookup.
         me::CompactPathIndex paths;
         std::vector<std::string> names;
@@ -72,6 +61,118 @@ static void runMemoryOptimizationTests() {
             found = me::findPathRecord(paths, names[i], resolve)->second == i;
         check(found && paths.count(me::PathHash{}("/direct")) >= 1,
               "CompactPath: 32-bit hash keys resolve every inserted path");
+    }
+
+    {
+        // Records 0..N-1 carry keys; a record's key can change between rounds.
+        // Compare against a reference map, once with real hashes and once with
+        // one shared hash so every probe collides and deletions wrap around.
+        for (int mode = 0; mode < 2; ++mode) {
+            me::PathRecordTable table;
+            std::vector<uint32_t> keyOf(5000);
+            std::map<uint32_t, uint32_t> reference; // key -> record
+            auto hashKey = [&](uint32_t key) -> uint64_t {
+                return mode ? 7 : key * 0x9e3779b97f4a7c15ULL;
+            };
+            auto hashOf = [&](uint32_t r) { return hashKey(keyOf[r]); };
+            uint64_t seed = 12345;
+            auto next = [&] { seed = seed * 6364136223846793005ULL + 1442695040888963407ULL; return uint32_t(seed >> 33); };
+            bool same = true;
+            for (int step = 0; step < (mode ? 3000 : 40000) && same; ++step) {
+                const uint32_t key = next() % 700, op = next() % 3;
+                if (op < 2) {
+                    const uint32_t record = next() % keyOf.size();
+                    if (reference.count(keyOf[record]) && reference[keyOf[record]] == record) continue;
+                    keyOf[record] = key;
+                    table.assign(hashKey(key), record, [&](uint32_t r) { return keyOf[r] == key; }, hashOf);
+                    reference[key] = record;
+                } else if (auto it = reference.find(key); it != reference.end()) {
+                    const size_t slot = table.slotOf(it->second, hashKey(key));
+                    same = slot != me::PathRecordTable::npos;
+                    if (same) table.eraseSlot(slot, hashOf);
+                    reference.erase(it);
+                }
+                if (step % 97 == 0 || mode) {
+                    same = same && table.size() == reference.size();
+                    for (const auto& [k, r] : reference)
+                        same = same && table.find(hashKey(k), [&](uint32_t o) { return keyOf[o] == k; }) == r;
+                }
+            }
+            check(same, mode ? "PathTable: colliding keys survive wrap-around deletion"
+                             : "PathTable: random assign/erase matches a reference map");
+        }
+
+        // Records stored in runs, extended runs and tail lists, minus tombstones.
+        std::vector<uint8_t> types;
+        std::vector<uint32_t> dirs;
+        uint64_t seed = 99;
+        auto next = [&] { seed = seed * 6364136223846793005ULL + 1442695040888963407ULL; return uint32_t(seed >> 33); };
+        for (int i = 0; i < 6000; ++i) {
+            dirs.push_back(i < 3000 ? (i / 37) % 60 : next() % 70);
+            types.push_back(next() % 9 == 0 ? 0 : 1);
+        }
+        auto map = me::DirRecordMap::build(types, dirs, 70);
+        for (int i = 6000; i < 7000; ++i) {
+            const uint32_t dir = i % 3 ? dirs.back() : next() % 80;
+            dirs.push_back(dir);
+            types.push_back(1);
+            map.append(dir, i);
+        }
+        for (int i = 0; i < 400; ++i) types[next() % types.size()] = 0;
+        bool same = true;
+        for (uint32_t dir = 0; dir < 80 && same; ++dir) {
+            std::vector<uint32_t> expected;
+            for (uint32_t i = 0; i < types.size(); ++i)
+                if (types[i] != 0 && dirs[i] == dir) expected.push_back(i);
+            same = map.collect(dir, types) == expected;
+        }
+        check(same, "DirRecordMap: runs, appends and tombstones match per-directory lists");
+        std::vector<uint8_t> scanTypes(3000, 1);
+        std::vector<uint32_t> scanDirs(3000);
+        for (uint32_t i = 0; i < 3000; ++i) scanDirs[i] = i / 37;
+        check(me::DirRecordMap::build(scanTypes, scanDirs, 82).runCount() == 82,
+              "DirRecordMap: a directory-ordered scan stores one run per directory");
+    }
+
+    {
+        auto add = [](SearchEngine& engine, const std::string& dir, const std::string& name) {
+            FileRecord rec;
+            rec.name = name;
+            rec.path = dir;
+            rec.type = 1;
+            return engine.addRecord(std::move(rec));
+        };
+        SearchEngine engine;
+        const uint32_t upper = add(engine, "/Case/Dir", "Report.TXT");
+        const uint32_t lower = add(engine, "/case/dir", "report.txt");
+        check(engine.liveRecordCount() == 1 && engine.getRecord(upper).type == 0 &&
+              engine.indexForPath("/CASE/DIR/REPORT.txt") == lower,
+              "PathIndex: directories differing only in case share one path");
+        const uint32_t slashed = add(engine, "/trail/", "x");
+        const uint32_t plain = add(engine, "/trail", "x");
+        check(engine.getRecord(slashed).type == 0 && engine.indexForPath("/trail/x") == plain,
+              "PathIndex: a trailing slash on the directory names the same path");
+        const uint32_t root = add(engine, "/", "top");
+        const uint32_t relative = add(engine, "", "top");
+        check(engine.indexForPath("/top") == root && engine.indexForPath("top") == relative,
+              "PathIndex: root and relative records stay distinct");
+        check(engine.removeByPath("/CASE/dir/Report.txt") && engine.indexForPath("/case/dir/report.txt") == UINT32_MAX &&
+              !engine.removeByPath("/case/dir/report.txt"),
+              "PathIndex: case-insensitive removal unmaps the record once");
+        for (int i = 0; i < 3000; ++i) add(engine, "/bulk/d" + std::to_string(i % 7), "f" + std::to_string(i));
+        check(engine.removeByPathPrefix("/BULK/d3") == 429 && engine.indexForPath("/bulk/d3/f3") == UINT32_MAX &&
+              engine.indexForPath("/bulk/d4/f4") != UINT32_MAX,
+              "PathIndex: prefix removal unmaps exactly the records below it");
+        engine.compactRecords();
+        bool mapped = engine.indexForPath("/trail/x") != UINT32_MAX && engine.indexForPath("/top") != UINT32_MAX;
+        for (int i = 0; i < 3000; ++i) {
+            const auto path = "/bulk/d" + std::to_string(i % 7) + "/f" + std::to_string(i);
+            const uint32_t idx = engine.indexForPath(path);
+            mapped = mapped && ((i % 7 == 3) == (idx == UINT32_MAX));
+            if (idx != UINT32_MAX) mapped = mapped && engine.getRecord(idx).name == "f" + std::to_string(i);
+        }
+        check(mapped && engine.liveRecordCount() == 3000 - 429 + 3,
+              "PathIndex: compaction rebuilds the table for every live path");
     }
 
     {
@@ -94,12 +195,14 @@ static void runMemoryOptimizationTests() {
         SearchEngine loaded;
         check(FlatIndexWriter(file).load(loaded, &meta), "Columns: v6 reload succeeds");
         loaded.completePhase2();
-        bool exact = loaded.recordCount() == 400;
+        bool exact = loaded.recordCount() == 400, dropped = true;
         for (uint32_t i = 0; exact && i < 400; ++i) {
             const auto a = engine.getRecord(i), b = loaded.getRecord(i);
-            exact = a.size == b.size && a.modTime == b.modTime && a.devId == b.devId && a.name == b.name;
+            exact = a.size == b.size && a.modTime == b.modTime && a.name == b.name;
+            dropped = dropped && a.inode == 0 && a.devId == 0 && b.inode == 0 && b.devId == 0;
         }
-        check(exact, "Columns: v6 round trip keeps oversized sizes, negative times and many devices");
+        check(exact, "Columns: v6 round trip keeps oversized sizes and negative times");
+        check(dropped, "Columns: inode and device IDs are not kept in memory or on disk");
         const auto big = loaded.query("size:>4gb", 0);
         check(big.size() == 1 && loaded.getRecord(big[0]).size == bigSize,
               "Columns: size filter reads oversized values from the side map");
@@ -517,8 +620,7 @@ static void runMemoryOptimizationTests() {
             check(r0.name == "persist_a.txt", "Persistence: record[0].name correct");
             check(r0.path == "/save/dir1", "Persistence: record[0].path reconstructed");
             check(r0.size == 111, "Persistence: record[0].size correct");
-            check(r0.inode == 9001, "Persistence: record[0].inode correct");
-            check(r0.devId == 42, "Persistence: record[0].devId correct");
+            check(r0.inode == 0 && r0.devId == 0, "Persistence: inode and device ID are not retained");
 
             auto r2 = engine.getRecord(2);
             check(r2.name == "persist_c.txt", "Persistence: record[2].name correct");

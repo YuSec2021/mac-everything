@@ -7,6 +7,8 @@
 #include "CompactPathIndex.h"
 #include "PackedPostingList.h"
 #include "NarrowColumn.h"
+#include "DirRecordMap.h"
+#include "PathRecordTable.h"
 #include "SIMDSearch.h"
 #include <vector>
 #include <string>
@@ -112,7 +114,6 @@ public:
     // Narrow per-record columns; out-of-range values keep exact side entries.
     using SizeColumn = me::NarrowColumn<uint64_t, uint32_t>;
     using ModTimeColumn = me::NarrowColumn<int64_t, uint32_t>;
-    using DevIdColumn = me::DictColumn<int32_t>;
 
     /// Takes ownership of scanned records and pre-computes lowercase names.
     void loadRecords(std::vector<FileRecord>&& records);
@@ -134,9 +135,7 @@ public:
                        StringPool&& lowerPathPool,
                        std::vector<uint8_t>&& types,
                        std::vector<uint64_t>&& sizes,
-                       std::vector<int64_t>&& modTimes,
-                       std::vector<uint64_t>&& inodes,
-                       std::vector<int32_t>&& devIds);
+                       std::vector<int64_t>&& modTimes);
 
     /// Complete Phase 2 of two-stage startup: build trigram indices in background,
     /// then swap under lock and replay mutations that occurred during build.
@@ -157,8 +156,6 @@ public:
         const std::vector<uint8_t>& types;
         const SizeColumn& sizes;
         const ModTimeColumn& modTimes;
-        const std::vector<uint64_t>& inodes;
-        const DevIdColumn& devIds;
         uint32_t liveCount;
     };
     V6ReadView readViewForV6() const;
@@ -313,8 +310,6 @@ public:
             rec.type = types_[idx];
             rec.size = sizes_[idx];
             rec.modTime = static_cast<time_t>(modTimes_[idx]);
-            rec.inode = inodes_[idx];
-            rec.devId = devIds_[idx];
             func(idx, rec, path);
         }
         return true;
@@ -335,8 +330,6 @@ public:
             rec.type = types_[i];
             rec.size = sizes_[i];
             rec.modTime = static_cast<time_t>(modTimes_[i]);
-            rec.inode = inodes_[i];
-            rec.devId = devIds_[i];
             func(i, rec, path);
         }
     }
@@ -354,8 +347,6 @@ public:
             rec.type = types_[i];
             rec.size = sizes_[i];
             rec.modTime = static_cast<time_t>(modTimes_[i]);
-            rec.inode = inodes_[i];
-            rec.devId = devIds_[i];
             func(i, rec, pathIndices_[i],
                  names_.lower().data(i), names_.lower().length(i));
         }
@@ -394,15 +385,44 @@ private:
     std::vector<uint8_t>  types_;          // 1=file, 2=directory, 0=tombstone
     SizeColumn            sizes_;          // file size in bytes
     ModTimeColumn         modTimes_;       // modification time (Unix epoch)
-    std::vector<uint64_t> inodes_;         // inode number
-    DevIdColumn           devIds_;         // device ID
     me::CompactPathIndex pathLookup_; // original path hash -> pathPool_ index
     me::CompactPathIndex lowerPathLookup_; // lowercase path hash -> pathPool_ index
-    me::CompactPathIndex pathIndex_;
+    // Live record per lowercase full path. The key is (canonical parent
+    // directory, lowercase name): directories whose lowercase paths join to the
+    // same full path share a canonical ID, so keys match full-path equality.
+    me::PathRecordTable pathIndex_;
+    std::vector<uint32_t> dirCanon_; // pathPool_ index -> canonical directory
+    static constexpr uint32_t kNoRecord = me::PathRecordTable::kNone;
     std::string lowerFullPath(uint32_t index) const;
-    me::CompactPathIndex::iterator findPathRecord(std::string_view path);
-    me::CompactPathIndex::const_iterator findPathRecord(std::string_view path) const;
-    void setPathRecord(std::string_view path, uint32_t index);
+
+    /// Key accessors over one generation of record data (live, snapshot or compacted).
+    struct PathKeys {
+        FoldedNamePool::View names;
+        const std::vector<uint32_t>& pathIndices;
+        const std::vector<uint32_t>& canon;
+        uint64_t hashOf(uint32_t r) const { return pathKeyHash(canon[pathIndices[r]], names.view(r)); }
+        bool matches(uint32_t r, uint32_t dir, std::string_view name) const {
+            return canon[pathIndices[r]] == dir && names.view(r) == name;
+        }
+    };
+    PathKeys pathKeys() const { return {names_.lower(), pathIndices_, dirCanon_}; }
+    static uint64_t pathKeyHash(uint32_t canonDir, std::string_view lowerName);
+    /// Canonical ID for a new directory whose lowercase path is lowerDir; call
+    /// before adding it to lowerLookup.
+    static uint32_t canonicalDir(const me::CompactPathIndex& lowerLookup, DirectoryPool::LowerView lower,
+                                 const std::vector<uint32_t>& canon, const std::string& lowerDir, uint32_t self);
+    /// Record whose lowercase full path equals the argument, or kNoRecord.
+    uint32_t findPathRecord(std::string_view lowerFull) const;
+    /// Map the record's own path to it, replacing any record with that path.
+    void setPathRecord(uint32_t index);
+    /// Unmap a record. Call before tombstoneAt, which clears its name.
+    void erasePathRecord(uint32_t index);
+    /// Rebuild pathIndex_ from live records (later duplicates win) and tombstone losers.
+    uint32_t rebuildPathIndex();
+    /// Rebuild pathLookup_, lowerPathLookup_ and dirCanon_ from pathPool_.
+    void rebuildDirLookups();
+    /// Mapped records at or below a lowercase path prefix, ascending.
+    std::vector<uint32_t> pathRecordsUnder(const std::string& lowerPrefix) const;
     std::atomic<uint32_t> liveCount_{0};
     mutable std::shared_mutex mutex_;
     mutable std::mutex mutationGate_;
@@ -418,7 +438,7 @@ private:
     std::unordered_map<Trigram, me::PackedPostingList> nameTrigramIndex_; // trigram -> record indices
 
     // Directory-to-record mapping; path queries scan the deduplicated directory pool.
-    std::vector<std::vector<uint32_t>> pathIdxToRecords_; // pathIdx -> sorted record indices
+    me::DirRecordMap pathIdxToRecords_; // pathIdx -> runs of record indices (tombstones skipped)
 
     // Extension index: extension string -> sorted record indices (files only)
     std::unordered_map<std::string, std::vector<uint32_t>> extensionIndex_;
@@ -458,10 +478,10 @@ private:
 
     /// Rebuild pathIdx -> record indices mapping
     void rebuildPathIdxToRecords();
-    /// Add a record to pathIdxToRecords_ (sorted insert)
+    /// Add a newly appended record to pathIdxToRecords_
     void addPathRecord(uint32_t idx);
-    /// Remove a record from pathIdxToRecords_ (sorted remove)
-    void removePathRecord(uint32_t idx);
+    /// Removal is lazy: pathIdxToRecords_ skips tombstoned records
+    void removePathRecord(uint32_t) {}
 
     static bool globMatch(const std::string& pattern, const std::string& text);
 
@@ -583,7 +603,7 @@ private:
 
 
     /// Build pathIdx -> record indices mapping from standalone data (used by COW compaction)
-    static std::vector<std::vector<uint32_t>>
+    static me::DirRecordMap
         buildPathIdxToRecordsFromData(const std::vector<uint8_t>& types,
                                       const std::vector<uint32_t>& pathIndices,
                                       uint32_t pathPoolSize);

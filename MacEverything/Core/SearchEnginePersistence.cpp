@@ -116,8 +116,6 @@ bool SearchEngine::saveToFile(const std::string& filePath, const IndexMetadata& 
         r.type = types_[i];
         r.size = sizes_[i];
         r.modTime = static_cast<time_t>(modTimes_[i]);
-        r.inode = inodes_[i];
-        r.devId = devIds_[i];
         std::string resolvedPath = pathPool_.str(pathIndices_[i]);
         if (!writeRecord(f, r, resolvedPath)) {
             fclose(f);

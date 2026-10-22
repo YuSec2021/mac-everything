@@ -54,8 +54,7 @@ static void runIndexMetadataTests() {
         auto res = engine.query("file1");
         check(res.size() == 1, "v3 load: file1 queryable");
         const auto& r = engine.getRecord(res[0]);
-        check(r.inode == 12345, "v3 load: inode preserved");
-        check(r.devId == 1, "v3 load: devId preserved");
+        check(r.inode == 0 && r.devId == 0, "v3 load: inode and device ID are not retained");
     }
 
     // ── Test 2: Legacy overload (uint64_t lastEventId) still works ──

@@ -267,22 +267,11 @@ void SearchEngine::removeExtensionForRecord(uint32_t idx) {
 // Directory-to-record mapping
 // ---------------------------------------------------------------------------
 
-std::vector<std::vector<uint32_t>>
+me::DirRecordMap
 SearchEngine::buildPathIdxToRecordsFromData(const std::vector<uint8_t>& types,
                                             const std::vector<uint32_t>& pathIndices,
                                             uint32_t pathPoolSize) {
-    std::vector<std::vector<uint32_t>> mapping(pathPoolSize);
-    for (size_t i = 0; i < types.size(); i++) {
-        if (types[i] == 0) continue;
-        uint32_t pi = pathIndices[i];
-        if (pi < mapping.size()) {
-            mapping[pi].push_back(static_cast<uint32_t>(i));
-        }
-    }
-    for (auto& list : mapping) {
-        list.shrink_to_fit();
-    }
-    return mapping;
+    return me::DirRecordMap::build(types, pathIndices, pathPoolSize);
 }
 
 void SearchEngine::rebuildPathIdxToRecords() {
@@ -291,27 +280,7 @@ void SearchEngine::rebuildPathIdxToRecords() {
 
 void SearchEngine::addPathRecord(uint32_t idx) {
     if (idx >= pathIndices_.size()) return;
-    uint32_t pi = pathIndices_[idx];
-    // Ensure pathIdxToRecords_ is large enough
-    if (pi >= pathIdxToRecords_.size()) {
-        pathIdxToRecords_.resize(pi + 1);
-    }
-    auto& list = pathIdxToRecords_[pi];
-    auto pos = std::lower_bound(list.begin(), list.end(), idx);
-    const auto offset = pos - list.begin();
-    me::reserveForAppend(list);
-    list.insert(list.begin() + offset, idx);
-}
-
-void SearchEngine::removePathRecord(uint32_t idx) {
-    if (idx >= pathIndices_.size()) return;
-    uint32_t pi = pathIndices_[idx];
-    if (pi >= pathIdxToRecords_.size()) return;
-    auto& list = pathIdxToRecords_[pi];
-    auto pos = std::lower_bound(list.begin(), list.end(), idx);
-    if (pos != list.end() && *pos == idx) {
-        list.erase(pos);
-    }
+    pathIdxToRecords_.append(pathIndices_[idx], idx);
 }
 
 // ---------------------------------------------------------------------------

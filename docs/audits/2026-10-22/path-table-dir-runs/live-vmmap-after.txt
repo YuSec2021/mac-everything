@@ -1,0 +1,87 @@
+Process:         MacEverything [46169]
+Path:            /Users/USER/*/MacEverything.app/Contents/MacOS/MacEverything
+Load Address:    0x102530000
+Identifier:      com.maceverything.app
+Version:         1.2 (3)
+Code Type:       ARM64
+Platform:        macOS
+Parent Process:  launchd [1]
+Target Type:     live task
+
+Date/Time:       2026-10-22 13:04:39.956 +0800
+Launch Time:     2026-10-22 13:01:14.363 +0800
+OS Version:      macOS 27.0.1 (26A434)
+Report Version:  7
+Analysis Tool:   /usr/bin/vmmap
+
+Physical footprint:         611.6M
+Physical footprint (peak):  834.3M
+Idle exit:                  untracked
+----
+
+ReadOnly portion of Libraries: Total=2.9G resident=961.8M(32%) swapped_out_or_unallocated=2.0G(68%)
+Writable regions: Total=895.5M written=675.6M(75%) resident=676.7M(76%) swapped_out=0K(0%) unallocated=218.8M(24%)
+
+                                VIRTUAL RESIDENT    DIRTY  SWAPPED VOLATILE   NONVOL    EMPTY   REGION 
+REGION TYPE                        SIZE     SIZE     SIZE     SIZE     SIZE     SIZE     SIZE    COUNT (non-coalesced) 
+===========                     ======= ========    =====  ======= ========   ======    =====  ======= 
+Accelerate Framework               128K     128K     128K       0K       0K     128K       0K        1 
+Activity Tracing                   256K      32K      32K       0K       0K      32K       0K        1 
+CG Image                            96K      96K      96K       0K       0K       0K       0K        5 
+ColorSync                           16K      16K      16K       0K       0K       0K       0K        1 
+CoreAnimation                      816K     816K     816K       0K       0K     608K       0K       46 
+CoreGraphics                        32K      32K      32K       0K       0K       0K       0K        2 
+CoreUI Image Data                 1088K    1088K    1088K       0K       0K       0K       0K        6 
+Dispatch Continuations           144.0M     576K     416K       0K       0K       0K       0K        2 
+Dyld Private Memory                128K      96K      96K       0K       0K       0K       0K        1 
+Foundation                          16K      16K      16K       0K       0K       0K       0K        1 
+Guard                            385.0G       0K       0K       0K       0K       0K       0K        1 
+IOAccelerator                       64K      64K      64K       0K       0K       0K       0K        2 
+IOAccelerator (graphics)            64K      16K      16K       0K       0K      16K       0K        1 
+IOKit                               96K      48K      48K       0K       0K      16K       0K        6 
+IOSurface                          448K     384K     384K       0K       0K     384K       0K        5 
+Malloc                            1024K     416K     416K       0K       0K       0K       0K        1         see MALLOC ZONE table below
+Malloc Guard Page                 3280K       0K       0K       0K       0K       0K       0K        4         see MALLOC ZONE table below
+Malloc Large                     429.9M   386.0M   386.0M       0K       0K       0K       0K       16         see MALLOC ZONE table below
+Malloc Metadata                   1216K    1216K    1216K       0K       0K       0K       0K        6         see MALLOC ZONE table below
+Malloc Metadata metadata          2304K    1728K    1728K       0K       0K       0K       0K        4         see MALLOC ZONE table below
+Malloc Small                     295.6M   281.6M   267.9M       0K       0K       0K       0K      170         see MALLOC ZONE table below
+Malloc Small (empty)              4480K    2320K     272K       0K       0K       0K       0K        8         see MALLOC ZONE table below
+Malloc Tiny                       4096K     288K     288K       0K       0K       0K       0K        1         see MALLOC ZONE table below
+OS Alloc Once                       32K      16K      16K       0K       0K       0K       0K        1 
+Stack                             10.1M     304K     304K       0K       0K       0K       0K        5 
+Stack Guard                       56.1M       0K       0K       0K       0K       0K       0K        5 
+Untagged                            32K      32K      32K       0K       0K       0K       0K        2 
+__AUTH                            6597K    3556K     806K       0K       0K       0K       0K      700 
+__AUTH_CONST                      99.0M    45.5M       0K       0K       0K       0K       0K     1052 
+__CTF                               824      824       0K       0K       0K       0K       0K        1 
+__DATA                            40.6M    12.8M    2562K       0K       0K       0K       0K     1090 
+__DATA_CONST                      37.7M    21.9M      83K       0K       0K       0K       0K     1114 
+__DATA_DIRTY                      14.6M    4922K    2434K       0K       0K       0K       0K      941 
+__FONT_DATA                        2352     2352       0K       0K       0K       0K       0K        1 
+__LINKEDIT                         1.6G   261.1M       0K       0K       0K       0K       0K       69 
+__OBJC_RO                        118.0M    77.0M       0K       0K       0K       0K       0K        1 
+__OBJC_RW                         2735K    2383K      47K       0K       0K       0K       0K        1 
+__TEXT                             1.4G   700.7M       0K       0K       0K       0K       0K     1211 
+__TPRO_CONST                       132K     132K     128K       0K       0K       0K       0K        4 
+mapped file                      242.8M    12.8M       0K       0K       0K       0K       0K       30 
+owned unmapped                      16K      16K      16K       0K       0K       0K       0K        1 
+page table in kernel              1106K    1106K    1106K       0K       0K       0K       0K        1 
+shared memory                      976K     352K     352K       0K       0K       0K       0K       21 
+unused but dirty shlib __DATA      645K     645K     645K       0K       0K       0K       0K      452 
+===========                     ======= ========    =====  ======= ========   ======    =====  ======= 
+TOTAL                            389.4G     1.8G   669.2M       0K       0K    1184K       0K     6994 
+
+                                          VIRTUAL   RESIDENT      DIRTY    SWAPPED ALLOCATION      BYTES DIRTY+SWAP          REGION
+MALLOC ZONE                                  SIZE       SIZE       SIZE       SIZE      COUNT  ALLOCATED  FRAG SIZE  % FRAG   COUNT
+===========                               =======  =========  =========  =========  =========  =========  =========  ======  ======
+DefaultMallocZone_0x102fe4000              734.7M     670.4M     654.7M         0K     456723     652.4M      2363K      1%     146
+AttributeGraph_0x103242bd0                  1024K       416K       416K         0K       7686       301K       115K     28%       1
+QuartzCore_0x103704000                       992K       880K       880K         0K       2151       161K       719K     82%      27
+AttributeGraph graph data_0x110968000        320K       320K       320K         0K        309        82K       238K     75%      17
+objc-class_rw_t_0x1030a8000                  128K       128K       128K         0K       3836        90K        38K     30%       7
+LSBindingEvaluator_0x10f9d4000                64K        64K        64K         0K          0         0K        64K    100%       2
+DefaultPurgeableMallocZone_0x14a124000         0K         0K         0K         0K          0         0K         0K      0%       0
+===========                               =======  =========  =========  =========  =========  =========  =========  ======  ======
+TOTAL                                      737.2M     672.2M     656.5M         0K     470705     653.0M      3537K      1%     200
+
