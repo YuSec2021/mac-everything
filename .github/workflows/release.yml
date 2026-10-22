@@ -33,7 +33,7 @@ jobs:
       HAS_CERT: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 != '' }}
       HAS_NOTARY: ${{ secrets.NOTARY_APPLE_ID != '' && secrets.NOTARY_TEAM_ID != '' && secrets.NOTARY_APP_PASSWORD != '' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0 # the build number is the commit count
 
@@ -181,7 +181,7 @@ jobs:
           EOF
           cat "$RUNNER_TEMP/notes.md" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: MacEverything-${{ steps.version.outputs.version }}
           path: dist/
