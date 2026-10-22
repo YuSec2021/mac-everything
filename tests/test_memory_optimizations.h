@@ -176,6 +176,89 @@ static void runMemoryOptimizationTests() {
     }
 
     {
+        // Prefix removal must match the full-path rule exactly: the lowercase
+        // path equals the prefix or continues with '/' after it.
+        const std::vector<std::string> dirs{"/", "/a", "/A/Bc", "/a/bc", "/a/bcd", "/a/bc/d", "/a/BC/d/e",
+                                            "/t/", "/t", "/t//x", "/u/v", "/u/vw/x", "/Deep/One/Two/Three"};
+        auto lowerAscii = [](std::string s) { for (char& c : s) c = char(std::tolower((unsigned char)c)); return s; };
+        auto fill = [&](SearchEngine& engine) {
+            int n = 0;
+            for (const auto& dir : dirs)
+                for (const char* name : {"bc", "f.txt", "BCD", "d", "x"}) {
+                    FileRecord rec;
+                    rec.name = std::string(name) + (n % 3 ? "" : std::to_string(n));
+                    rec.path = dir;
+                    rec.type = n % 4 ? 1 : 2;
+                    engine.addRecord(std::move(rec));
+                    ++n;
+                }
+        };
+        auto expected = [&](const SearchEngine& engine, const std::string& prefix) {
+            std::vector<uint32_t> out;
+            const std::string p = lowerAscii(prefix);
+            for (uint32_t i = 0; i < engine.recordCount(); ++i) {
+                const auto r = engine.getRecord(i);
+                if (r.type == 0) continue;
+                const auto full = SearchEngine::makeFullPath(r.path, r.name);
+                if (engine.indexForPath(full) != i) continue;
+                const auto path = lowerAscii(full);
+                if (path.compare(0, p.size(), p) == 0 && (path.size() == p.size() || path[p.size()] == '/'))
+                    out.push_back(i);
+            }
+            return out;
+        };
+        auto removesExactly = [&](SearchEngine& engine, const std::string& prefix) {
+            const auto want = expected(engine, prefix);
+            std::vector<uint8_t> before(engine.recordCount());
+            for (uint32_t i = 0; i < before.size(); ++i) before[i] = engine.getRecord(i).type;
+            if (engine.removeByPathPrefix(prefix) != want.size()) return false;
+            for (uint32_t i = 0; i < before.size(); ++i) {
+                const bool removed = std::binary_search(want.begin(), want.end(), i);
+                if ((engine.getRecord(i).type == 0) != (removed || before[i] == 0)) return false;
+            }
+            return true;
+        };
+        std::vector<std::string> prefixes{"/", "/a", "/A", "/a/b", "/a/bc", "/A/BC", "/a/bc/", "/a/bcd", "/a/bc/d",
+                                          "/t", "/t/", "/t//", "/u/v", "/u/vw", "/deep/one", "/Deep/One/Two/Three/x",
+                                          "/a/bc/f.txt", "/missing", "/a/bc/d/e/bc", ""};
+        bool all = true;
+        for (const auto& prefix : prefixes) {
+            SearchEngine engine;
+            fill(engine);
+            all = all && removesExactly(engine, prefix);
+            if (!all) { std::cout << "    prefix mismatch: '" << prefix << "'\n"; break; }
+        }
+        check(all, "PrefixRemove: directory lookup removes exactly the matching paths");
+
+        // Orphaned duplicates (same path twice in one rescan) stay live, as before.
+        SearchEngine rescanned;
+        fill(rescanned);
+        std::vector<FileRecord> fresh(2);
+        for (auto& rec : fresh) { rec.name = "dup"; rec.path = "/a/bc"; rec.type = 1; }
+        rescanned.batchRescanPrefix("/a/bc", std::move(fresh));
+        const uint32_t live = rescanned.liveRecordCount();
+        check(rescanned.removeByPathPrefix("/a/bc") == 1 && rescanned.liveRecordCount() == live - 1,
+              "PrefixRemove: unmapped duplicates are not removed");
+
+        // Before Phase 2 the directory map is incomplete; removal scans every record.
+        const std::string file = "/tmp/test_memopt_prefix_" + std::to_string(getpid()) + ".v6";
+        SearchEngine saved;
+        fill(saved);
+        IndexMetadata meta;
+        bool pending = FlatIndexWriter(file).fullRewrite(saved, meta);
+        SearchEngine loaded;
+        pending = pending && FlatIndexWriter(file).load(loaded, &meta) && loaded.isPhase2Pending();
+        FileRecord extra;
+        extra.name = "late";
+        extra.path = "/a/bc";
+        extra.type = 1;
+        loaded.addRecord(std::move(extra));
+        check(pending && removesExactly(loaded, "/a/bc") && removesExactly(loaded, "/T"),
+              "PrefixRemove: pending Phase 2 falls back to a full scan");
+        std::remove(file.c_str());
+    }
+
+    {
         const std::string file = "/tmp/test_memopt_columns_" + std::to_string(getpid()) + ".v6";
         SearchEngine engine;
         const uint64_t bigSize = 5ull << 30;

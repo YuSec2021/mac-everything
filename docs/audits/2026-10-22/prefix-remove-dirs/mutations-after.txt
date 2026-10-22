@@ -1,0 +1,6 @@
+lookup_hit_us=1.253 hits=100000
+lookup_miss_us=1.051 misses=100000
+update_us=108.927 live=6381948
+small_prefix_remove_ms=51.58 removed=28
+rescan_prefix_ms=57.8 removed=2
+prefix_remove_ms=1408.5 removed=41562 live=6340356
