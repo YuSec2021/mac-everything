@@ -111,16 +111,39 @@ uint32_t SearchEngine::rebuildPathIndex() {
 
 std::vector<uint32_t> SearchEngine::pathRecordsUnder(const std::string& lowerPrefix) const {
     std::vector<uint32_t> matches;
-    pathIndex_.forEach([&](uint32_t idx) {
-        const auto path = lowerFullPath(idx);
-        if (path.size() >= lowerPrefix.size() &&
-            path.compare(0, lowerPrefix.size(), lowerPrefix) == 0 &&
-            (path.size() == lowerPrefix.size() || path[lowerPrefix.size()] == '/')) {
-            matches.push_back(idx);
+    if (phase2Pending_.load(std::memory_order_acquire) || pathIdxToRecords_.empty()) {
+        // The directory map is incomplete until Phase 2: check every mapped record.
+        pathIndex_.forEach([&](uint32_t idx) {
+            const auto path = lowerFullPath(idx);
+            if (path.size() >= lowerPrefix.size() &&
+                path.compare(0, lowerPrefix.size(), lowerPrefix) == 0 &&
+                (path.size() == lowerPrefix.size() || path[lowerPrefix.size()] == '/')) {
+                matches.push_back(idx);
+            }
+        });
+    } else {
+        // lowerFullPath is the directory joined as "dir/" plus the name. A path
+        // below the prefix therefore has a joined directory starting with
+        // "prefix/"; only a record equal to the prefix sits in a shallower one.
+        const std::string below = lowerPrefix + '/';
+        const auto lower = pathPool_.lower();
+        const auto keys = pathKeys();
+        std::string dir;
+        for (uint32_t d = 0; d < lower.entryCount(); ++d) {
+            if (size_t(lower.length(d)) + 1 < below.size()) continue;
+            lower.reconstruct(d, dir);
+            if (!dir.empty() && dir.back() != '/') dir += '/';
+            if (dir.compare(0, below.size(), below) != 0) continue;
+            pathIdxToRecords_.forEach(d, types_, [&](uint32_t idx) {
+                // Orphaned duplicates are live but unmapped, and stay untouched.
+                if (pathIndex_.slotOf(idx, keys.hashOf(idx)) != me::PathRecordTable::npos) matches.push_back(idx);
+            });
         }
-    });
+        if (const uint32_t idx = findPathRecord(lowerPrefix); idx != kNoRecord) matches.push_back(idx);
+    }
     // Removing while iterating would shift entries, so callers mutate afterwards.
     std::sort(matches.begin(), matches.end());
+    matches.erase(std::unique(matches.begin(), matches.end()), matches.end());
     return matches;
 }
 
@@ -395,7 +418,11 @@ uint32_t SearchEngine::removeByPathPrefix(const std::string& pathPrefix) {
 
     std::string lowerPrefix = me::toLower(pathPrefix);
     uint32_t removed = 0;
-    for (uint32_t idx : pathRecordsUnder(lowerPrefix)) {
+    const auto matches = pathRecordsUnder(lowerPrefix);
+    // Name indexes must be cleaned before tombstoning clears names_.lower().
+    const bool batched = matches.size() >= kBatchIndexRemoval;
+    if (batched) removeIndexEntriesForRecords(matches);
+    for (uint32_t idx : matches) {
         // H-4: Write WAL entry for each removed path
         if (wal_) {
             std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
@@ -403,10 +430,9 @@ uint32_t SearchEngine::removeByPathPrefix(const std::string& pathPrefix) {
         }
 
         time_t oldModTime = static_cast<time_t>(modTimes_[idx]);
-        // Clean up trigram index (must happen before clearing names_.lower())
-        removeTrigramsForRecord(idx);
+        if (!batched) removeTrigramsForRecord(idx);
         removePathRecord(idx);
-        removeExtensionForRecord(idx);
+        if (!batched) removeExtensionForRecord(idx);
         tombstoneAt(idx);
         liveCount_.fetch_sub(1, std::memory_order_relaxed);
         removeFromRecentCache(idx, oldModTime);
@@ -424,16 +450,19 @@ uint32_t SearchEngine::batchRescanPrefix(const std::string& pathPrefix,
     // Remove trigrams incrementally for each tombstoned record.
     std::string lowerPrefix = me::toLower(pathPrefix);
     uint32_t removed = 0;
-    for (uint32_t idx : pathRecordsUnder(lowerPrefix)) {
+    const auto matches = pathRecordsUnder(lowerPrefix);
+    const bool batched = matches.size() >= kBatchIndexRemoval;
+    if (batched) removeIndexEntriesForRecords(matches);
+    for (uint32_t idx : matches) {
         // Write WAL Remove entry for each removed path
         if (wal_) {
             std::string fullPath = makeFullPath(pathPool_.str(pathIndices_[idx]), names_.original().str(idx));
             wal_->append(WALOp::Remove, fullPath);
         }
 
-        removeTrigramsForRecord(idx);
+        if (!batched) removeTrigramsForRecord(idx);
         removePathRecord(idx);
-        removeExtensionForRecord(idx);
+        if (!batched) removeExtensionForRecord(idx);
         tombstoneAt(idx);
         liveCount_.fetch_sub(1, std::memory_order_relaxed);
         removed++;

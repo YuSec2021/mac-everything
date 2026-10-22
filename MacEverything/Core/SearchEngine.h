@@ -277,6 +277,12 @@ public:
     /// Accesses recentCache_ directly under the lock to avoid per-record copy overhead.
     std::vector<uint32_t> recentIndices(uint32_t count) const;
 
+    /// Testing aid: every trigram ("t" + code) and extension ("e" + ext)
+    /// posting list, sorted by key.
+    std::vector<std::pair<std::string, std::vector<uint32_t>>> postingListsForTesting() const;
+    /// Below this many records, prefix removal updates the name indexes per record.
+    static constexpr size_t kBatchIndexRemoval = 64;
+
     /// Look up the record index for a given full path. Returns UINT32_MAX if not found.
     uint32_t indexForPath(const std::string& fullPath) const;
 
@@ -475,6 +481,9 @@ private:
     void addExtensionForRecord(uint32_t idx);
     /// Remove a record from the extension index
     void removeExtensionForRecord(uint32_t idx);
+    /// Remove ascending records from the trigram and extension indexes, one
+    /// rewrite per posting list. Same result as the per-record removals.
+    void removeIndexEntriesForRecords(const std::vector<uint32_t>& sortedIdx);
 
     /// Rebuild pathIdx -> record indices mapping
     void rebuildPathIdxToRecords();

@@ -1,5 +1,6 @@
 #pragma once
 #include "VectorGrowth.h"
+#include <algorithm>
 #include <cassert>
 #include <compare>
 #include <cstdint>
@@ -147,6 +148,50 @@ public:
         --count_;
         checkpoints_.erase(std::remove_if(checkpoints_.begin(), checkpoints_.end(), [&](const auto& c) { return c.rank >= count_; }), checkpoints_.end());
         checkpoints_.erase(std::unique(checkpoints_.begin(), checkpoints_.end(), [](const auto& a, const auto& b) { return a.rank == b.rank; }), checkpoints_.end());
+    }
+    /// Erase one occurrence of each ID in the sorted range [first, last), as
+    /// repeated erase(lower_bound(id)) would. Rewrites the deltas once, from the
+    /// checkpoint before the first ID to the last removal, then moves the rest.
+    /// Returns how many IDs were present.
+    size_t eraseSorted(const uint32_t* first, const uint32_t* last) {
+        if (first == last || count_ == 0) return 0;
+        // Resume from the last checkpoint whose preceding ID is below *first.
+        const auto cp = std::partition_point(checkpoints_.begin() + 1, checkpoints_.end(),
+                                             [&](const Checkpoint& c) { return c.previous < *first; }) - 1;
+        const std::vector<Checkpoint> tail(cp, checkpoints_.end());
+        checkpoints_.erase(cp, checkpoints_.end());
+        uint32_t in = tail.front().offset, out = in, value = tail.front().previous, kept = value;
+        uint32_t rank = tail.front().rank, outRank = rank, sinceCheckpoint = stride;
+        uint32_t removed = 0;
+        // Deltas only merge, and a merged varint is never longer than its parts,
+        // so the rewrite never overtakes the bytes still to be read.
+        auto keep = [&](uint32_t id) {
+            if (sinceCheckpoint >= stride) { checkpoints_.push_back({outRank, out, kept}); sinceCheckpoint = 0; }
+            out += static_cast<uint32_t>(encode(id - kept, bytes_.data() + out));
+            kept = id; ++outRank; ++sinceCheckpoint;
+        };
+        for (; rank < count_ && first != last; ++rank) {
+            value += decode(in);
+            while (first != last && *first < value) ++first;
+            if (first != last && *first == value) { ++first; ++removed; continue; }
+            keep(value);
+        }
+        if (rank < count_) {
+            keep(value + decode(in));
+            const int64_t shift = int64_t(out) - in;
+            std::copy(bytes_.begin() + in, bytes_.end(), bytes_.begin() + out);
+            bytes_.resize(bytes_.size() + shift);
+            for (const auto& c : tail)
+                if (c.rank > rank)
+                    checkpoints_.push_back({c.rank - removed, static_cast<uint32_t>(int64_t(c.offset) + shift), c.previous});
+        } else {
+            bytes_.resize(out);
+            last_ = kept;
+        }
+        count_ -= removed;
+        if (count_ == 0) { checkpoints_.clear(); last_ = 0; }
+        else boundSeeks();
+        return removed;
     }
 };
 // Delta insertion reserves the exact encoded growth internally.

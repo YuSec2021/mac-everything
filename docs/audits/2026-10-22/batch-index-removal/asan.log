@@ -1,0 +1,250 @@
+
+╔══════════════════════════════════════════╗
+║  MacEverything Full Test & Benchmark     ║
+╚══════════════════════════════════════════╝
+
+  Selected parts: 21 3 3d
+
+========================================
+  Part 3: SearchEngine Mutation Tests
+========================================
+
+    [PASS] loadRecords: recordCount == 4
+    [PASS] loadRecords: liveRecordCount == 4
+    [PASS] query 'hello': 1 match
+    [PASS] query 'hello': correct name
+    [PASS] query '.txt': 1 match
+    [PASS] query 'README' (case-insensitive): 1 match
+
+  --- addRecord ---
+    [PASS] addRecord: returned index 4
+    [PASS] addRecord: recordCount == 5
+    [PASS] addRecord: liveRecordCount == 5
+    [PASS] addRecord: queryable by name
+    [PASS] addRecord: correct size
+
+  --- removeByPath ---
+    [PASS] removeByPath '/tmp/hello.txt': returned true
+    [PASS] removeByPath: liveRecordCount == 4
+    [PASS] removeByPath: 'hello' no longer queryable
+    [PASS] removeByPath: record type == 0 (tombstone)
+    [PASS] removeByPath non-existent: returned false
+    [PASS] removeByPath non-existent: liveCount unchanged
+    [PASS] removeByPath bogus path: returned false
+
+  --- updateByPath ---
+    [PASS] updateByPath: liveRecordCount unchanged (4)
+    [PASS] updateByPath: new name queryable
+    [PASS] updateByPath: new record has updated size
+    [PASS] updateByPath: old record tombstoned
+    [PASS] updateByPath new path: liveRecordCount == 5
+    [PASS] updateByPath new path: queryable
+
+  --- Mutation Performance ---
+    10,000 addRecord:    106.81ms (10.7us/op)
+    10,000 removeByPath: 411.81ms (41.2us/op)
+    [PASS] Mutation perf: liveCount == 100000 (100k - 10k removed + 10k added)
+    10,000 updateByPath: 1322.85ms (132.3us/op)
+
+========================================
+  Part 3d: Compact Records Tests
+========================================
+
+    [PASS] Compact: initial recordCount == 100
+    [PASS] Compact: initial liveRecordCount == 100
+    [PASS] Compact: after removing 50, liveRecordCount == 50
+    [PASS] Compact: after removing 50, recordCount still 100 (tombstones)
+    [PASS] Compact: after compaction, recordCount == 50
+    [PASS] Compact: after compaction, liveRecordCount == 50
+    [PASS] Compact: compact_50.txt still queryable after compaction
+    [PASS] Compact: correct record data after compaction
+    [PASS] Compact: compact_0.txt not queryable after compaction
+    [PASS] Compact: no-op compaction preserves recordCount
+
+========================================
+  Part 21: Memory Optimization Tests
+========================================
+
+    [PASS] Growth: appending preserves loaded array contents
+    [PASS] Growth: a loaded array does not double after one file event
+    [PASS] Growth: string and entry buffers remain aligned through repeated growth
+    [PASS] NarrowColumn: sizes at and past 32 bits keep exact values
+    [PASS] NarrowColumn: set moves rows between narrow storage and the side map
+    [PASS] NarrowColumn: shrinking drops side entries; copies stay independent
+    [PASS] NarrowColumn: growth fills zeros
+    [PASS] NarrowColumn: negative and out-of-range modification times keep exact values
+    [PASS] CompactPath: 32-bit hash keys resolve every inserted path
+    [PASS] PathTable: random assign/erase matches a reference map
+    [PASS] PathTable: colliding keys survive wrap-around deletion
+    [PASS] DirRecordMap: runs, appends and tombstones match per-directory lists
+    [PASS] DirRecordMap: a directory-ordered scan stores one run per directory
+    [PASS] PathIndex: directories differing only in case share one path
+    [PASS] PathIndex: a trailing slash on the directory names the same path
+    [PASS] PathIndex: root and relative records stay distinct
+    [PASS] PathIndex: case-insensitive removal unmaps the record once
+    [PASS] PathIndex: prefix removal unmaps exactly the records below it
+    [PASS] PathIndex: compaction rebuilds the table for every live path
+    [PASS] PrefixRemove: directory lookup removes exactly the matching paths
+    [PASS] PrefixRemove: unmapped duplicates are not removed
+    [PASS] PrefixRemove: pending Phase 2 falls back to a full scan
+    [PASS] Columns: v6 save succeeds
+    [PASS] Columns: v6 reload succeeds
+    [PASS] Columns: v6 round trip keeps oversized sizes and negative times
+    [PASS] Columns: inode and device IDs are not kept in memory or on disk
+    [PASS] Columns: size filter reads oversized values from the side map
+    [PASS] Directory tree: exact root, relative, repeated slash, Unicode and maximum-length roundtrip
+    [PASS] Directory tree: copied snapshot is independent
+    [PASS] Directory tree: legacy flat entries preserve IDs and tombstones
+    [PASS] Directory tree: query cursor reconstructs changing parent IDs
+    [PASS] Directory tree: shared prefixes are not stored for every path
+    [PASS] Folded names: identical ASCII and Unicode names share bytes
+    [PASS] Folded names: changed case and Unicode byte lengths remain independent
+    [PASS] Folded names: copied snapshots survive deletion and growth
+    [PASS] Folded names: both views survive legacy flat roundtrip
+    [PASS] Mapped input: self-append detaches safely while copied owner remains live
+    [PASS] Mapped input: move preserves backing and leaves reusable source
+    [PASS] Directory lowercase: whole-path Unicode and invalid UTF-8 semantics are preserved
+    [PASS] CompactPath: hash collision preserves distinct files
+    [PASS] CompactPath: resolves first colliding path
+    [PASS] CompactPath: resolves second colliding path
+    [PASS] CompactPath: hash match cannot identify a missing file
+    [PASS] CompactPath: duplicate path replaces only its own record
+    [PASS] CompactPath: deleting one collision preserves the other
+    [PASS] CompactPath: copied const snapshot remains independently queryable
+    [PASS] Packed IDs: varint deltas retain full ID range in compact storage
+    [PASS] Packed IDs: promotion preserves all 24-bit and 32-bit boundaries
+    [PASS] Packed IDs: sorted insert and erase preserve values
+    [PASS] Packed IDs: copied list owns independent storage
+    [PASS] Packed IDs: empty iterator range
+    [PASS] Packed IDs: repeated growth preserves posting order
+    [PASS] Delta IDs: randomized insert, erase, seek and sequential iteration agree with vector
+    [PASS] Delta IDs: erasing checkpoints to empty permits full-range reuse
+    [PASS] Delta IDs: dense postings including checkpoints use less than two bytes per ID
+    [PASS] Delta IDs: sorted batch erase matches repeated single erases
+    [PASS] BatchRemove: prefix removal takes the batched path
+    [PASS] BatchRemove: trigram and extension posting lists equal per-record removal
+    [PASS] BatchRemove: live count and recent cache equal per-record removal
+    [PASS] BatchRemove: WAL entries keep per-record order and content
+    [PASS] BatchRemove: rescan phase 1 leaves the same posting lists
+    [PASS] BatchRemove: queries after batch removal match per-record removal
+    [PASS] Result pages: tombstones are skipped without shifting record IDs
+    [PASS] Result pages: stale IDs rejected under lock after compaction
+    [PASS] Result pages: reload also invalidates outstanding IDs
+  --- Path deduplication in loadRecords ---
+    [PASS] PathDedup: 150 records loaded
+    [PASS] PathDedup: 150 live records
+    [PASS] PathDedup: only 2 unique paths in PathTable
+    [PASS] PathDedup: getRecord(0).path reconstructed
+    [PASS] PathDedup: getRecord(0).name correct
+    [PASS] PathDedup: getRecord(100).path reconstructed
+    [PASS] PathDedup: getRecord(100).name correct
+
+  --- Query correctness after path dedup ---
+    [PASS] Query: 'hello' finds 1 result
+    [PASS] Query: 'hello' correct file
+    [PASS] Query: 'readme' finds 1 result
+    [PASS] Query: '/home/user' returns 0 (no node name contains 'user')
+    [PASS] Query: case-insensitive 'README' finds 1 result
+
+  --- Mutations with path dedup ---
+    [PASS] Mutation: addRecord name correct
+    [PASS] Mutation: addRecord path reconstructed from PathTable
+    [PASS] Mutation: addRecord new path correct
+    [PASS] Mutation: removeByPath returns true
+    [PASS] Mutation: liveCount after remove
+    [PASS] Mutation: removed file not queryable
+    [PASS] Mutation: updateByPath new name queryable
+    [PASS] Mutation: updateByPath path correct
+
+  --- removeByPathPrefix with path dedup ---
+    [PASS] removeByPathPrefix: removed 2 records
+    [PASS] removeByPathPrefix: 1 live record
+    [PASS] removeByPathPrefix: non-removed file still queryable
+
+  --- Compaction rebuilds PathTable ---
+    [PASS] Compact: 3 unique paths before
+    [PASS] Compact: remap not empty
+    [PASS] Compact: file_1 still queryable after compaction
+    [PASS] Compact: path correctly reconstructed after compaction
+
+  --- forEachRecordWithPath vs getRecord ---
+    [PASS] forEachRecordWithPath: 3 results
+    [PASS] forEachRecordWithPath: name[0] matches getRecord
+    [PASS] forEachRecordWithPath: path[0] matches getRecord
+    [PASS] forEachRecordWithPath: type[0] matches getRecord
+    [PASS] forEachRecordWithPath: size[0] matches getRecord
+    [PASS] forEachRecordWithPath: name[1] matches getRecord
+    [PASS] forEachRecordWithPath: path[1] matches getRecord
+    [PASS] forEachRecordWithPath: type[1] matches getRecord
+    [PASS] forEachRecordWithPath: size[1] matches getRecord
+    [PASS] forEachRecordWithPath: name[2] matches getRecord
+    [PASS] forEachRecordWithPath: path[2] matches getRecord
+    [PASS] forEachRecordWithPath: type[2] matches getRecord
+    [PASS] forEachRecordWithPath: size[2] matches getRecord
+
+  --- forEachRecordWithPath skips tombstones ---
+    [PASS] forEachRecordWithPath: skips tombstoned record
+    [PASS] forEachRecordWithPath: first live record correct
+    [PASS] forEachRecordWithPath: second live record correct
+
+  --- Persistence roundtrip ---
+    [PASS] Persistence: saveToFile succeeded
+    [PASS] Persistence: loadFromFile succeeded
+    [PASS] Persistence: lastEventId preserved
+    [PASS] Persistence: extra metadata preserved
+    [PASS] Persistence: 3 records loaded
+    [PASS] Persistence: 2 unique paths after load
+    [PASS] Persistence: record[0].name correct
+    [PASS] Persistence: record[0].path reconstructed
+    [PASS] Persistence: record[0].size correct
+    [PASS] Persistence: inode and device ID are not retained
+    [PASS] Persistence: record[2].name correct
+    [PASS] Persistence: record[2].path reconstructed
+    [PASS] Persistence: query works after load
+
+  --- WAL replay correctness ---
+    [PASS] WAL replay: 3 entries in WAL
+    [PASS] WAL replay: 2 live records after replay
+    [PASS] WAL replay: 'added' queryable
+    [PASS] WAL replay: added record path correct
+    [PASS] WAL replay: 'base' removed
+    [PASS] WAL replay: 'final' queryable
+    [PASS] WAL replay: final record path correct
+
+  --- Trigram without recordTrigrams_ ---
+    [PASS] Trigram-noStore: 'doc' matches 2 files
+    [PASS] Trigram-noStore: 'doc' matches 3 after add
+    [PASS] Trigram-noStore: 'document' not found after remove
+    [PASS] Trigram-noStore: 'doc' matches 2 after remove
+    [PASS] Trigram-noStore: 'doc' matches 2 after compaction
+    [PASS] Trigram-noStore: 'readme' matches 1 after compaction
+
+  --- resolveRecordPath ---
+    [PASS] resolveRecordPath: idx 0 correct
+    [PASS] resolveRecordPath: idx 1 same path
+    [PASS] resolveRecordPath: idx 2 different path
+
+  --- indexForPath ---
+    [PASS] indexForPath: found correct index
+    [PASS] indexForPath: returns UINT32_MAX for missing
+
+  --- PathTable bounds check ---
+    [PASS] PathTable bounds: 2 entries
+    [PASS] PathTable bounds: resolve(0) works
+    [PASS] PathTable bounds: resolve(1) works
+    [PASS] PathTable bounds: out-of-range returns empty
+    [PASS] PathTable bounds: UINT32_MAX returns empty
+
+  --- resolveRecordPath value copy + bounds ---
+    [PASS] resolveRecordPath: valid index returns correct path
+    [PASS] resolveRecordPath: out-of-bounds returns empty
+
+╔══════════════════════════════════════════╗
+║  Final Summary                           ║
+╚══════════════════════════════════════════╝
+
+  Tests passed: 181
+  Tests failed: 0
+  Result:       ALL PASSED ✓
+
+exit=0

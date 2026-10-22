@@ -1,0 +1,1032 @@
+
+╔══════════════════════════════════════════╗
+║  MacEverything Full Test & Benchmark     ║
+╚══════════════════════════════════════════╝
+
+  Selected parts: 21 3 3b 3d 4 47 48 58 62 64 69 7 71 72 77 7b 7c 8
+
+========================================
+  Part 3: SearchEngine Mutation Tests
+========================================
+
+    [PASS] loadRecords: recordCount == 4
+    [PASS] loadRecords: liveRecordCount == 4
+    [PASS] query 'hello': 1 match
+    [PASS] query 'hello': correct name
+    [PASS] query '.txt': 1 match
+    [PASS] query 'README' (case-insensitive): 1 match
+
+  --- addRecord ---
+    [PASS] addRecord: returned index 4
+    [PASS] addRecord: recordCount == 5
+    [PASS] addRecord: liveRecordCount == 5
+    [PASS] addRecord: queryable by name
+    [PASS] addRecord: correct size
+
+  --- removeByPath ---
+    [PASS] removeByPath '/tmp/hello.txt': returned true
+    [PASS] removeByPath: liveRecordCount == 4
+    [PASS] removeByPath: 'hello' no longer queryable
+    [PASS] removeByPath: record type == 0 (tombstone)
+    [PASS] removeByPath non-existent: returned false
+    [PASS] removeByPath non-existent: liveCount unchanged
+    [PASS] removeByPath bogus path: returned false
+
+  --- updateByPath ---
+    [PASS] updateByPath: liveRecordCount unchanged (4)
+    [PASS] updateByPath: new name queryable
+    [PASS] updateByPath: new record has updated size
+    [PASS] updateByPath: old record tombstoned
+    [PASS] updateByPath new path: liveRecordCount == 5
+    [PASS] updateByPath new path: queryable
+
+  --- Mutation Performance ---
+    10,000 addRecord:    252.20ms (25.2us/op)
+    10,000 removeByPath: 580.65ms (58.1us/op)
+    [PASS] Mutation perf: liveCount == 100000 (100k - 10k removed + 10k added)
+    10,000 updateByPath: 3246.66ms (324.7us/op)
+
+========================================
+  Part 3b: Path-based Search Tests
+========================================
+
+    [PASS] Path search 'local': 3 matches (path contains 'local')
+    [PASS] Path search '/usr/local': 0 (node-centric, no name contains 'local')
+    [PASS] Path search '/etc/config': 1 match
+    [PASS] Path search '/etc/config': correct file
+    [PASS] Dir name search 'projects': 1 match
+    [PASS] Dir name search 'projects': correct file
+    [PASS] Glob '*/lib/*': 1 match
+    [PASS] Glob '*/lib/*': correct file
+    [PASS] After addRecord: 'newlib' returns 1 match
+    [PASS] After removeByPath: 'libfoo' returns 0 match
+    [PASS] After updateByPath: 'newlib_v2' returns 1 match
+
+========================================
+  Part 3d: Compact Records Tests
+========================================
+
+    [PASS] Compact: initial recordCount == 100
+    [PASS] Compact: initial liveRecordCount == 100
+    [PASS] Compact: after removing 50, liveRecordCount == 50
+    [PASS] Compact: after removing 50, recordCount still 100 (tombstones)
+    [PASS] Compact: after compaction, recordCount == 50
+    [PASS] Compact: after compaction, liveRecordCount == 50
+    [PASS] Compact: compact_50.txt still queryable after compaction
+    [PASS] Compact: correct record data after compaction
+    [PASS] Compact: compact_0.txt not queryable after compaction
+    [PASS] Compact: no-op compaction preserves recordCount
+
+========================================
+  Part 4: FSEvents Integration Test
+========================================
+
+    [PASS] FileSystemWatcher started
+  --- File Create ---
+    [FAIL] Create event received
+
+  --- File Modify ---
+    [FAIL] Modify event received
+
+  --- File Rename ---
+    [FAIL] Rename event received
+
+  --- File Delete ---
+    [FAIL] Delete event received
+
+  --- Batch Create (100 files) ---
+    [FAIL] Batch create: received events
+    Events received: 0
+    Batch latency: 5021ms
+    [PASS] FileSystemWatcher stopped
+
+═══ Part 7: CompactRecords + ContentIndex Remap ═══
+
+    [PASS] C1: All 5 files indexed in ContentIndex
+    [PASS] C1: 3 live records after removal
+    [PASS] C1: 3 content-indexed files after removal
+    [PASS] C1: file0 still in SearchEngine
+    [PASS] C1: file2 still in SearchEngine
+    [PASS] C1: file4 still in SearchEngine
+    [PASS] C1: file1 old index not in ContentIndex
+    [PASS] C1: file3 old index not in ContentIndex
+    [PASS] C1: ContentIndex still has 3 files after IndexPersistence::compact()
+
+═══ Part 7b: Destructor Safety (stopAutoCompactionAndWait) ═══
+
+    [PASS] C2: IndexPersistence destroyed safely with active compaction timer
+    [PASS] C2: ContentIndexPersistence destroyed safely with active compaction timer
+
+═══ Part 7c: ContentIndexPersistence WAL Race Safety ═══
+
+    [PASS] C3: Concurrent WAL appends + compacts completed without crash
+    [PASS] C3: Substantial concurrent WAL appends completed without race
+
+========================================
+  Part 8: Trigram Index for Filename Search
+========================================
+
+  --- Basic trigram search ---
+    [PASS] Trigram: 'doc' matches document.pdf, dockerfile, doc_helper.py
+    [PASS] Trigram: 'document' matches 1 file
+    [PASS] Trigram: 'document' matches document.pdf
+    [PASS] Trigram: 'readme' matches 1 file
+    [PASS] Trigram: 'config' matches 1 file
+
+  --- Trigram index with mutations ---
+    [PASS] Trigram add: 'alpha' matches 2 after addRecord
+    [PASS] Trigram remove: 'alpha' matches 1 after removeByPath
+    [PASS] Trigram remove: correct file remains
+    [PASS] Trigram update: 'beta' no longer matches after update
+    [PASS] Trigram update: 'gamma' matches after update
+
+  --- Trigram index after compaction ---
+    [PASS] Trigram compact: 10 live records after compaction
+    [PASS] Trigram compact: specific file still findable after compaction
+    [PASS] Trigram compact: removed file not findable after compaction
+
+  --- Short keyword fallback ---
+    [PASS] Short keyword 'ab': all 3 files match (linear scan fallback)
+    [PASS] Single char 'a': all 3 files match
+
+  --- Glob pattern matching ---
+    [PASS] Glob '*.cpp': 2 matches
+    [PASS] Glob 'hello.*': 2 matches
+    [PASS] Glob 'hello.?': 1 match (hello.h)
+    [PASS] Glob '*.xyz': 0 matches
+
+  --- No-match via trigram ---
+    [PASS] No-match 'xyz_nowhere': trigram index returns empty
+
+  --- Trigram search performance ---
+    100x trigram search (maxResults=100): 20.47ms (0.20ms/query)
+    100x linear search (short key, maxResults=100): 52.83ms (0.53ms/query)
+    100x trigram search (unlimited): 21.43ms (0.21ms/query)
+    Trigram speedup (limited): 2.6x
+    [PASS] Trigram performance benchmark produced timing data
+    100x partial_sort (maxResults=100, many matches): 50.90ms (0.51ms/query)
+    100x full_sort (unlimited, many matches): 1119.72ms (11.20ms/query)
+    partial_sort speedup: 22.0x
+    [PASS] partial_sort benchmark produced timing data
+
+  --- Path-only match with trigram ---
+    [PASS] Path+Trigram: 'local' matches 3 (1 name + 2 path)
+    [PASS] Path+Trigram: name match 'local.conf' ranked first
+
+  --- removeByPathPrefix with trigram ---
+    [PASS] removeByPathPrefix: 'aaa' no longer findable via trigram
+    [PASS] removeByPathPrefix: 'ccc' still findable via trigram
+
+  --- removeByPathPrefix benchmark ---
+    [PASS] removeByPathPrefix: removed correct count
+    [PASS] removeByPathPrefix: live count correct after removal
+    [PASS] removeByPathPrefix: removed file not queryable
+    [PASS] removeByPathPrefix: non-removed file still queryable
+    Remove 5000 / 50000 records: 175.92ms
+    [PASS] removeByPathPrefix benchmark: records were removed
+
+  --- Trigram candidate threshold fallback ---
+    [PASS] Threshold fallback: 'test' finds all matches
+    [PASS] Threshold fallback: 'test' uses linear scan
+    [PASS] Threshold fallback: 'unique_xyz' finds 5 matches
+    [PASS] Threshold fallback: 'unique_xyz' stays on trigram
+    'test': 3000 results, path=advanced-linear-gcd, candidates=0
+    'unique_xyz': 5 results, path=advanced-trigram, candidates=5
+
+  --- Compiled glob + trigram pre-filtering ---
+    [PASS] Glob trigram: '*.cpp' finds 50 .cpp files
+    '*.cpp': 50 results, path=advanced-trigram, candidates=50
+    [PASS] Glob trigram: '*.hpp' finds 30 .hpp files
+    '*.hpp': 30 results, path=advanced-trigram, candidates=30
+    [PASS] Glob linear: '*.h' falls back to linear (fixed part too short for trigram)
+    '*.h': 0 results, path=advanced-linear-gcd
+    [PASS] Glob trigram: 'source_*' finds 50 files
+    'source_*': 50 results, path=advanced-trigram, candidates=50
+    '*data*': 9920 results, path=advanced-linear-gcd, candidates=0
+    100x '*.cpp' (trigram glob): 1.66ms (0.02ms/query)
+    100x '*.cpp' (linear glob):  15.64ms (0.16ms/query)
+    Glob trigram speedup: 9.4x
+    [PASS] Compiled glob + trigram benchmark produced timing data
+
+  --- Multi-segment glob + trigram pre-filtering ---
+    [PASS] Multi-seg glob: '*source*.cpp' finds 70 files (50 src + 20 test)
+    [PASS] Multi-seg glob: '*source*.cpp' uses advanced-trigram path
+    '*source*.cpp': 70 results, path=advanced-trigram, candidates=80
+    [PASS] Multi-seg glob: '*.cpp.*' finds 10 .cpp.bak files
+    [PASS] Multi-seg glob: '*.cpp.*' uses advanced-trigram path
+    '*.cpp.*': 10 results, path=advanced-trigram, candidates=10
+    [PASS] Multi-seg glob: 'test_*.cpp' finds 20 test files
+    [PASS] Multi-seg glob: 'test_*.cpp' uses advanced-trigram path
+    'test_*.cpp': 20 results, path=advanced-trigram, candidates=20
+    [PASS] Multi-seg glob: '*.ext.*' finds 15 .ext.tmp files
+    [PASS] Multi-seg glob: '*.ext.*' uses advanced-trigram path
+    '*.ext.*': 15 results, path=advanced-trigram, candidates=15
+    [PASS] Multi-seg glob: '?ource*.cpp' finds 50 source files
+    [PASS] Multi-seg glob: '?ource*.cpp' uses advanced-trigram path
+    '?ource*.cpp': 50 results, path=advanced-trigram, candidates=80
+    [PASS] Multi-seg glob: '*a*b*' falls back to linear (all segments < 3)
+    '*a*b*': 0 results, path=advanced-linear-gcd
+    [PASS] Multi-seg glob: trigram vs linear produce identical results for '*source*.cpp'
+    Correctness: trigram(70) == linear(70)
+    100x '*source*.cpp' (trigram): 4.11ms (0.04ms/query)
+    100x '*source*.cpp' (linear):  27.89ms (0.28ms/query)
+    Multi-seg trigram speedup: 6.8x
+    [PASS] Multi-segment glob + trigram benchmark produced timing data
+
+========================================
+  Part 21: Memory Optimization Tests
+========================================
+
+    [PASS] Growth: appending preserves loaded array contents
+    [PASS] Growth: a loaded array does not double after one file event
+    [PASS] Growth: string and entry buffers remain aligned through repeated growth
+    [PASS] NarrowColumn: sizes at and past 32 bits keep exact values
+    [PASS] NarrowColumn: set moves rows between narrow storage and the side map
+    [PASS] NarrowColumn: shrinking drops side entries; copies stay independent
+    [PASS] NarrowColumn: growth fills zeros
+    [PASS] NarrowColumn: negative and out-of-range modification times keep exact values
+    [PASS] CompactPath: 32-bit hash keys resolve every inserted path
+    [PASS] PathTable: random assign/erase matches a reference map
+    [PASS] PathTable: colliding keys survive wrap-around deletion
+    [PASS] DirRecordMap: runs, appends and tombstones match per-directory lists
+    [PASS] DirRecordMap: a directory-ordered scan stores one run per directory
+    [PASS] PathIndex: directories differing only in case share one path
+    [PASS] PathIndex: a trailing slash on the directory names the same path
+    [PASS] PathIndex: root and relative records stay distinct
+    [PASS] PathIndex: case-insensitive removal unmaps the record once
+    [PASS] PathIndex: prefix removal unmaps exactly the records below it
+    [PASS] PathIndex: compaction rebuilds the table for every live path
+    [PASS] PrefixRemove: directory lookup removes exactly the matching paths
+    [PASS] PrefixRemove: unmapped duplicates are not removed
+    [PASS] PrefixRemove: pending Phase 2 falls back to a full scan
+    [PASS] Columns: v6 save succeeds
+    [PASS] Columns: v6 reload succeeds
+    [PASS] Columns: v6 round trip keeps oversized sizes and negative times
+    [PASS] Columns: inode and device IDs are not kept in memory or on disk
+    [PASS] Columns: size filter reads oversized values from the side map
+    [PASS] Directory tree: exact root, relative, repeated slash, Unicode and maximum-length roundtrip
+    [PASS] Directory tree: copied snapshot is independent
+    [PASS] Directory tree: legacy flat entries preserve IDs and tombstones
+    [PASS] Directory tree: query cursor reconstructs changing parent IDs
+    [PASS] Directory tree: shared prefixes are not stored for every path
+    [PASS] Folded names: identical ASCII and Unicode names share bytes
+    [PASS] Folded names: changed case and Unicode byte lengths remain independent
+    [PASS] Folded names: copied snapshots survive deletion and growth
+    [PASS] Folded names: both views survive legacy flat roundtrip
+    [PASS] Mapped input: self-append detaches safely while copied owner remains live
+    [PASS] Mapped input: move preserves backing and leaves reusable source
+    [PASS] Directory lowercase: whole-path Unicode and invalid UTF-8 semantics are preserved
+    [PASS] CompactPath: hash collision preserves distinct files
+    [PASS] CompactPath: resolves first colliding path
+    [PASS] CompactPath: resolves second colliding path
+    [PASS] CompactPath: hash match cannot identify a missing file
+    [PASS] CompactPath: duplicate path replaces only its own record
+    [PASS] CompactPath: deleting one collision preserves the other
+    [PASS] CompactPath: copied const snapshot remains independently queryable
+    [PASS] Packed IDs: varint deltas retain full ID range in compact storage
+    [PASS] Packed IDs: promotion preserves all 24-bit and 32-bit boundaries
+    [PASS] Packed IDs: sorted insert and erase preserve values
+    [PASS] Packed IDs: copied list owns independent storage
+    [PASS] Packed IDs: empty iterator range
+    [PASS] Packed IDs: repeated growth preserves posting order
+    [PASS] Delta IDs: randomized insert, erase, seek and sequential iteration agree with vector
+    [PASS] Delta IDs: erasing checkpoints to empty permits full-range reuse
+    [PASS] Delta IDs: dense postings including checkpoints use less than two bytes per ID
+    [PASS] Result pages: tombstones are skipped without shifting record IDs
+    [PASS] Result pages: stale IDs rejected under lock after compaction
+    [PASS] Result pages: reload also invalidates outstanding IDs
+  --- Path deduplication in loadRecords ---
+    [PASS] PathDedup: 150 records loaded
+    [PASS] PathDedup: 150 live records
+    [PASS] PathDedup: only 2 unique paths in PathTable
+    [PASS] PathDedup: getRecord(0).path reconstructed
+    [PASS] PathDedup: getRecord(0).name correct
+    [PASS] PathDedup: getRecord(100).path reconstructed
+    [PASS] PathDedup: getRecord(100).name correct
+
+  --- Query correctness after path dedup ---
+    [PASS] Query: 'hello' finds 1 result
+    [PASS] Query: 'hello' correct file
+    [PASS] Query: 'readme' finds 1 result
+    [PASS] Query: '/home/user' returns 0 (no node name contains 'user')
+    [PASS] Query: case-insensitive 'README' finds 1 result
+
+  --- Mutations with path dedup ---
+    [PASS] Mutation: addRecord name correct
+    [PASS] Mutation: addRecord path reconstructed from PathTable
+    [PASS] Mutation: addRecord new path correct
+    [PASS] Mutation: removeByPath returns true
+    [PASS] Mutation: liveCount after remove
+    [PASS] Mutation: removed file not queryable
+    [PASS] Mutation: updateByPath new name queryable
+    [PASS] Mutation: updateByPath path correct
+
+  --- removeByPathPrefix with path dedup ---
+    [PASS] removeByPathPrefix: removed 2 records
+    [PASS] removeByPathPrefix: 1 live record
+    [PASS] removeByPathPrefix: non-removed file still queryable
+
+  --- Compaction rebuilds PathTable ---
+    [PASS] Compact: 3 unique paths before
+    [PASS] Compact: remap not empty
+    [PASS] Compact: file_1 still queryable after compaction
+    [PASS] Compact: path correctly reconstructed after compaction
+
+  --- forEachRecordWithPath vs getRecord ---
+    [PASS] forEachRecordWithPath: 3 results
+    [PASS] forEachRecordWithPath: name[0] matches getRecord
+    [PASS] forEachRecordWithPath: path[0] matches getRecord
+    [PASS] forEachRecordWithPath: type[0] matches getRecord
+    [PASS] forEachRecordWithPath: size[0] matches getRecord
+    [PASS] forEachRecordWithPath: name[1] matches getRecord
+    [PASS] forEachRecordWithPath: path[1] matches getRecord
+    [PASS] forEachRecordWithPath: type[1] matches getRecord
+    [PASS] forEachRecordWithPath: size[1] matches getRecord
+    [PASS] forEachRecordWithPath: name[2] matches getRecord
+    [PASS] forEachRecordWithPath: path[2] matches getRecord
+    [PASS] forEachRecordWithPath: type[2] matches getRecord
+    [PASS] forEachRecordWithPath: size[2] matches getRecord
+
+  --- forEachRecordWithPath skips tombstones ---
+    [PASS] forEachRecordWithPath: skips tombstoned record
+    [PASS] forEachRecordWithPath: first live record correct
+    [PASS] forEachRecordWithPath: second live record correct
+
+  --- Persistence roundtrip ---
+    [PASS] Persistence: saveToFile succeeded
+    [PASS] Persistence: loadFromFile succeeded
+    [PASS] Persistence: lastEventId preserved
+    [PASS] Persistence: extra metadata preserved
+    [PASS] Persistence: 3 records loaded
+    [PASS] Persistence: 2 unique paths after load
+    [PASS] Persistence: record[0].name correct
+    [PASS] Persistence: record[0].path reconstructed
+    [PASS] Persistence: record[0].size correct
+    [PASS] Persistence: inode and device ID are not retained
+    [PASS] Persistence: record[2].name correct
+    [PASS] Persistence: record[2].path reconstructed
+    [PASS] Persistence: query works after load
+
+  --- WAL replay correctness ---
+    [PASS] WAL replay: 3 entries in WAL
+    [PASS] WAL replay: 2 live records after replay
+    [PASS] WAL replay: 'added' queryable
+    [PASS] WAL replay: added record path correct
+    [PASS] WAL replay: 'base' removed
+    [PASS] WAL replay: 'final' queryable
+    [PASS] WAL replay: final record path correct
+
+  --- Trigram without recordTrigrams_ ---
+    [PASS] Trigram-noStore: 'doc' matches 2 files
+    [PASS] Trigram-noStore: 'doc' matches 3 after add
+    [PASS] Trigram-noStore: 'document' not found after remove
+    [PASS] Trigram-noStore: 'doc' matches 2 after remove
+    [PASS] Trigram-noStore: 'doc' matches 2 after compaction
+    [PASS] Trigram-noStore: 'readme' matches 1 after compaction
+
+  --- resolveRecordPath ---
+    [PASS] resolveRecordPath: idx 0 correct
+    [PASS] resolveRecordPath: idx 1 same path
+    [PASS] resolveRecordPath: idx 2 different path
+
+  --- indexForPath ---
+    [PASS] indexForPath: found correct index
+    [PASS] indexForPath: returns UINT32_MAX for missing
+
+  --- PathTable bounds check ---
+    [PASS] PathTable bounds: 2 entries
+    [PASS] PathTable bounds: resolve(0) works
+    [PASS] PathTable bounds: resolve(1) works
+    [PASS] PathTable bounds: out-of-range returns empty
+    [PASS] PathTable bounds: UINT32_MAX returns empty
+
+  --- resolveRecordPath value copy + bounds ---
+    [PASS] resolveRecordPath: valid index returns correct path
+    [PASS] resolveRecordPath: out-of-bounds returns empty
+
+========================================
+  Part 47: Path Trigram Index
+========================================
+
+  --- Test 1: Path trigram index build ---
+    [PASS] Path trigram: 'homebrew' matches 2 files in homebrew paths
+    [PASS] Path trigram: 'Desktop' matches 1 file
+
+  --- Test 2: pathIdx -> records mapping ---
+    [PASS] Path trigram: 'shared' finds all 3 files in /shared/dir
+    [PASS] Path trigram: 'other' finds 1 file in /other/place
+
+  --- Test 3: Incremental add/remove ---
+    [PASS] Path trigram: initial 'alpha' match
+    [PASS] Path trigram: 'beta' found after addRecord
+    [PASS] Path trigram: 'alpha' matches 2 after second add
+    [PASS] Path trigram: 'alpha' matches 1 after remove
+    [PASS] Path trigram: 'beta' empty after update moved record away
+    [PASS] Path trigram: 'gamma' found after update
+
+  --- Test 4: Path-only matching ---
+    [PASS] Path trigram: 'DerivedData' matches 2 files (path-only)
+    [PASS] Path trigram: matched files are under DerivedData path
+    [PASS] Path trigram: matched files are under DerivedData path
+
+  --- Test 5: Slash in keyword uses structured query ---
+    [PASS] Slash keyword: 'home/user' structured query, no name match → 0 results
+
+  --- Test 6: Compaction consistency ---
+    [PASS] Path trigram: same result count after compaction
+    [PASS] Path trigram: 10 live records after compaction
+
+  --- Test 7: Short keyword fallback ---
+    [PASS] Short keyword: 'ab' finds match via linear scan fallback
+
+  --- Test 8: batchRescanPrefix ---
+    [PASS] batchRescan: 'target' matches 3 new files
+    [PASS] batchRescan: 'rescan' matches all 4 files (3 new + 1 kept)
+
+  Part 47 complete.
+
+========================================
+  Part 48: Slash Query (Node-Centric)
+========================================
+
+  --- Test 1: Basic slash query ---
+    [PASS] Slash query: 'dir/file' matches 1 result (name='file', path has 'dir')
+    [PASS] Slash query: matched file is file.txt
+
+  --- Test 2: Name must match node name ---
+    [PASS] Slash query: 'local/gcc' matches gcc in /usr/local/bin
+    [PASS] Slash query: 'local/lib' matches lib.a
+
+  --- Test 3: Long name slash query ---
+    [PASS] Slash query: 'tests/test_query_perf' matches 2 results
+
+  --- Test 4: Slash query no match ---
+    [PASS] Slash query: 'nonexist/dir' returns empty
+
+  --- Test 5: Short parts fallback ---
+    [PASS] Slash query: 'a/b' with short parts still finds correct result
+    [PASS] Slash query: short parts matched b.c in /a
+
+  --- Test 6: No double-counting ---
+    [PASS] Slash query: 'src/tests' matches only the file under /project/src
+    [PASS] Slash query: correct file matched
+
+  --- Test 7: Absolute path single segment ---
+    [PASS] AbsPath: '/brew' matches brew
+
+  --- Test 8: Multi-segment adjacency ---
+    [PASS] AbsPath: '/etc/hosts' matches hosts in /etc
+
+  --- Test 9: Non-adjacent wildcard ---
+    [PASS] Non-adj wildcard: '/project/*/target' matches 2 under /project
+
+  --- Test 10: Structured search path label ---
+    [PASS] Structured path: 'local/brew' finds brew
+    [PASS] Slash query has searchPath set (got: advanced-linear-gcd)
+
+  --- Test 11: Timing non-negative ---
+    [PASS] phase1Ms must be non-negative for structured queries
+    [PASS] phase2Ms must be non-negative for structured queries
+    timing: phase1=0.0ms phase2=0.0ms
+
+  --- Test 12: DIR_LIST via /* ---
+    [PASS] DIR_LIST: gcc found under /usr/local/bin
+    [PASS] DIR_LIST: ls found under /usr/local/bin
+    [PASS] DIR_LIST: cat not under /usr/local/bin
+
+  --- Test 13: Trigram-degrade phase1Ms non-negative ---
+    [PASS] Trigram-degrade query 'test' finds results
+    [PASS] Trigram-degrade query has searchPath set (got: advanced-linear-gcd)
+    [PASS] phase1Ms must be non-negative after trigram degrade (got: 0.000000)
+    [PASS] trigramMs must be non-negative after trigram degrade (got: 0.019084)
+    timing: trigram=0.0ms phase1=0.0ms
+
+  --- Test 14: Glob-trigram phase1Ms non-negative ---
+    [PASS] Glob query '*.cpp' finds 2 results
+    [PASS] phase1Ms must be non-negative for glob-trigram (got: 0.000000)
+    [PASS] trigramMs must be non-negative for glob-trigram (got: 0.004208)
+    timing: trigram=0.0ms phase1=0.0ms path=advanced-linear-gcd
+========================================
+  Part 58: Structured Query (Node-Centric)
+========================================
+
+  --- Test 1: Parser — PLAIN mode ---
+    [PASS] pq.mode == QueryMode::PLAIN
+    [PASS] pq.namePattern == "hello"
+    [PASS] pq.pathSegments.empty()
+
+  --- Test 2: Parser — SEGMENTS mode ---
+    [PASS] pq.mode == QueryMode::SEGMENTS
+    [PASS] pq.namePattern == "def"
+    [PASS] pq.pathSegments.size() == 1
+    [PASS] pq.pathSegments[0].text == "abc"
+    [PASS] pq.pathSegments[0].adjacentToNext == true
+
+  --- Test 3: Parser — DIR_EXACT mode ---
+    [PASS] pq.mode == QueryMode::DIR_EXACT
+    [PASS] pq.namePattern == "def"
+    [PASS] pq.pathSegments.size() == 1
+    [PASS] pq.pathSegments[0].text == "abc"
+
+  --- Test 4: Parser — DIR_LIST mode ---
+    [PASS] pq.mode == QueryMode::DIR_LIST
+    [PASS] pq.namePattern == "def"
+    [PASS] pq.pathSegments.size() == 1
+    [PASS] pq.pathSegments[0].text == "abc"
+
+  --- Test 5: Parser — adjacency break ---
+    [PASS] pq.mode == QueryMode::SEGMENTS
+    [PASS] pq.namePattern == "def"
+    [PASS] pq.pathSegments.size() == 1
+    [PASS] pq.pathSegments[0].text == "abc"
+    [PASS] pq.pathSegments[0].adjacentToNext == false
+
+  --- Test 6: Parser — single segment ---
+    [PASS] pq.mode == QueryMode::SEGMENTS
+    [PASS] pq.namePattern == "usr"
+    [PASS] pq.pathSegments.empty()
+    [PASS] pq2.mode == QueryMode::PLAIN
+    [PASS] pq2.namePattern == "usr"
+
+  --- Test 7: Parser — leading slash optional ---
+    [PASS] pq.mode == QueryMode::SEGMENTS
+    [PASS] pq.namePattern == "def"
+    [PASS] pq.pathSegments.size() == 1
+    [PASS] pq.pathSegments[0].text == "abc"
+
+  --- Test 8: Parser — multi-segment ---
+    [PASS] pq.mode == QueryMode::SEGMENTS
+    [PASS] pq.namePattern == "c"
+    [PASS] pq.pathSegments.size() == 2
+    [PASS] pq.pathSegments[0].text == "a"
+    [PASS] pq.pathSegments[0].adjacentToNext == true
+    [PASS] pq.pathSegments[1].text == "b"
+    [PASS] pq.pathSegments[1].adjacentToNext == true
+
+  --- Test 9: Parser — case insensitive ---
+    [PASS] pq.mode == QueryMode::SEGMENTS
+    [PASS] pq.namePattern == "def"
+    [PASS] pq.pathSegments[0].text == "abc"
+
+  --- Test 10: SEGMENTS — basic node search ---
+    [PASS] foundSettings
+    [PASS] !foundOther
+
+  --- Test 11: SEGMENTS — adjacency ---
+    [PASS] matchCount == 1
+
+  --- Test 12: SEGMENTS — non-adjacent * ---
+    [PASS] matchCount == 2
+    [PASS] !foundOther
+
+  --- Test 13: DIR_EXACT — directory search ---
+    [PASS] found
+    [PASS] !foundFile
+    [PASS] !foundOpt
+
+  --- Test 14: DIR_LIST — list children ---
+    [PASS] foundNames.count("gcc") == 1
+    [PASS] foundNames.count("ls") == 1
+    [PASS] foundNames.count("make") == 1
+    [PASS] foundNames.count("cat") == 0
+
+  --- Test 15: Single segment equivalence ---
+    [PASS] foundConfig
+
+  --- Test 16: searchPath label ---
+    [PASS] !timing.searchPath.empty()
+
+  --- Test 17: DIR_LIST — no path constraint ---
+    [PASS] res.size() == 2
+
+  --- Test 18: SEGMENTS — node-centric, no path-only ---
+    [PASS] !foundOther
+
+  --- Test 19: /abc/* is DIR_LIST, not glob ---
+    [PASS] timing.searchPath != "glob-trigram"
+    [PASS] res.size() >= 1
+
+  --- Test 20: Path anchor — path segment cheaper than name ---
+    [PASS] matchCount == 2
+    [PASS] !foundOther
+
+  --- Test 21: Tree-walk — 3 adjacent segments ---
+    [PASS] foundPython
+    [PASS] !foundRuby
+
+  --- Test 22: Non-adjacent — path anchor with * ---
+    [PASS] foundProject
+    [PASS] !foundOther
+
+  --- Test 23: DIR_EXACT with path anchor ---
+    [PASS] foundLocalBin
+    [PASS] !foundOptBin
+
+  --- Test 24: Short segments fallback to linear ---
+    [PASS] foundUsrBin
+    [PASS] foundLsof
+
+  --- Test 25: Anchor vs linear result consistency ---
+    [PASS] matchCount == 2
+    [PASS] !foundConfig
+
+  --- Test 26: Parallel linear scan consistency ---
+    [PASS] matchCount == 1
+    [PASS] !foundBaz
+
+  --- Test 27: pathMatchCache deduplication ---
+    [PASS] sharedCount == 50
+    [PASS] otherCount == 0
+
+  --- Test 28: Already-lowercase path matching ---
+    [PASS] foundSettings
+    [PASS] !foundOther
+
+  --- Test 29: Buffer-scan correctness ---
+    [PASS] binLsCount == 2
+    [PASS] !foundPulse
+
+  --- Test 30: Cross-boundary false positive rejection ---
+    [PASS] foundOols
+    [PASS] !foundHelo
+
+  --- Test 31: Tombstone exclusion in buffer scan ---
+    [PASS] !foundTxt
+    [PASS] foundLog
+
+  --- Test 32: DIR_EXACT via buffer scan ---
+    [PASS] res.size() == 1
+    [PASS] rec.name == "bin"
+    [PASS] rec.path == "/usr"
+
+
+── Part 62: QueryNeedsAnalysis Tests ──
+
+    [PASS] needs.needsName == true
+    [PASS] needs.needsPath == true
+    [PASS] needs.isPureFilter() == false
+    [PASS] needs.needsSize == true
+    [PASS] needs.needsName == false
+    [PASS] needs.needsPath == false
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsType == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsType == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsModTime == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.hasExtFilter == true
+    [PASS] needs.needsName == true
+    [PASS] needs.isPureFilter() == false
+    [PASS] needs.needsPath == true
+    [PASS] needs.isPureFilter() == false
+    [PASS] needs.needsName == true
+    [PASS] needs.needsPath == true
+    [PASS] needs.needsSize == true
+    [PASS] needs.isPureFilter() == false
+    [PASS] needs.needsSize == true
+    [PASS] needs.needsModTime == true
+    [PASS] needs.needsName == false
+    [PASS] needs.needsPath == false
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsType == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsType == true
+    [PASS] needs.needsSize == true
+    [PASS] needs.needsModTime == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsName == true
+    [PASS] needs.isPureFilter() == false
+    [PASS] needs.needsType == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsModTime == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsModTime == true
+    [PASS] needs.isPureFilter() == true
+    [PASS] needs.needsModTime == true
+    [PASS] needs.isPureFilter() == true
+── Part 64: AST Structured Transform ──
+  Passed: 60  Failed: 0
+
+── Part 69: Trigram Competition ──
+    [PASS] 69.1 *.txt finds 3 .txt files
+    [PASS] 69.1 *.txt uses trigram path (got: advanced-trigram)
+    [PASS] 69.2 *.cpp finds 2 files
+    [PASS] 69.2 trigram narrows candidates (cands=2 total=202)
+    [PASS] 69.3 path competition: 2 results
+    [PASS] 69.3 directory scan narrows unselective name candidates (got: advanced-path-scan)
+    [PASS] 69.4 'main' finds 2 files
+    [PASS] 69.4 pure name uses advanced-trigram (got: advanced-trigram)
+    [PASS] 69.5 *a* falls to linear (got: advanced-linear-gcd)
+    [PASS] 69.6 test*.swift finds 2 files
+    [PASS] 69.6 test*.swift uses trigram (got: advanced-trigram)
+    [PASS] 69.7 'test' finds 50 files with relaxed threshold
+    [PASS] 69.7 high-freq keyword uses trigram with relaxed threshold (got: advanced-trigram)
+    [PASS] 69.8 'test' finds 15 files
+    [PASS] 69.8 >10% candidates falls to linear (got: advanced-linear-gcd)
+    [PASS] 69.9 *.py finds 30 python files
+    [PASS] 69.9 *.py uses trigram with relaxed threshold (got: advanced-trigram)
+    [PASS] 69.10 /Library/Application finds 2 results
+    [PASS] 69.10 name trigram wins, skips path expansion (got: advanced-trigram)
+    [PASS] 69.11 /raresegment/common finds 2 results
+    [PASS] 69.11 directory scan narrows unselective name candidates (got: advanced-path-scan)
+    [PASS] 69.12 trigram timing is captured (trigramMs=0.002334)
+    [PASS] Directory scan: parent constraints exclude filename-only matches
+    [PASS] Directory scan: short name uses directory mapping without path trigrams
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root/RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root/RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root/RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: root//a
+    [PASS] Directory scan: same ordered results as full scan: root//a
+    [PASS] Directory scan: same ordered results as full scan: root//a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a | readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a | readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a | readme
+    [PASS] Directory scan: same ordered results as full scan: !RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: !RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: !RareSegment/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a ext:txt
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a ext:txt
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a ext:txt
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a !deep/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a !deep/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a !deep/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a other/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a other/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/a other/a
+    [PASS] Directory scan: same ordered results as full scan: missing-path/a
+    [PASS] Directory scan: same ordered results as full scan: missing-path/a
+    [PASS] Directory scan: same ordered results as full scan: missing-path/a
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/readme
+    [PASS] Directory scan: same ordered results as full scan: RareSegment/readme
+    [PASS] Directory scan: new directory maps records after mutation
+    [PASS] Directory scan: delete and move update directory mapping
+    [PASS] Directory scan: compaction preserves complete ordered results
+    [PASS] Directory scan: subtree rescan preserves complete ordered results
+  Part 69 summary: 58 passed, 0 failed
+
+=== Flat Persistence v6 Tests ===
+
+--- v6: basic round-trip (2048 records) ---
+    [PASS] V6-1: engine has 2048 records
+    [PASS] V6-1: fullRewrite succeeds
+    [PASS] V6-1: load succeeds
+    [PASS] V6-1: lastEventId preserved
+    [PASS] V6-1: recordCount matches
+    [PASS] V6-1: liveCount matches
+    [PASS] V6-1: Phase 2 completed
+    [PASS] V6-1: file100.txt found via search, original case preserved
+    [PASS] V6-1: path resolved correctly for File0.TXT
+    [PASS] V6-1: last record found
+
+--- v6: tombstone preservation (100 records, 30 deleted) ---
+    [PASS] V6-2: 70 live after 30 removals
+    [PASS] V6-2: fullRewrite with tombstones
+    [PASS] V6-2: load succeeds
+    [PASS] V6-2: liveCount matches (70 live)
+    [PASS] V6-2: tombstoned record tomb5.txt not searchable
+    [PASS] V6-2: live record tomb50.txt searchable
+
+--- v6: CRC corruption detection ---
+    [PASS] V6-3: write for CRC test
+    [PASS] V6-3: file large enough for corruption test
+    [PASS] V6-3: open v6 file for tampering
+    [PASS] V6-3: load fails when section data is corrupted
+
+--- v6: empty engine round-trip ---
+    [PASS] V6-4: fullRewrite with 0 records
+    [PASS] V6-4: load empty v6 index
+    [PASS] V6-4: 0 records after loading empty v6
+    [PASS] V6-4: 0 live records after loading empty v6
+
+--- v6: large scale (100K records) ---
+    [PASS] V6-5: engine has 100K records
+    [PASS] V6-5: fullRewrite 100K records
+    [PASS] V6-5: load 100K records
+    [PASS] V6-5: lastEventId preserved
+    [PASS] V6-5: liveCount matches 100K
+    [PASS] V6-5: spot-check record large50000.dat found with correct size
+    [PASS] V6-5: last record large99999.dat found
+
+--- v6: Phase 2 completion ---
+    [PASS] V6-6: fullRewrite for Phase 2 test
+    [PASS] V6-6: load succeeds
+    [PASS] V6-6: isPhase2Pending==true after load
+    [PASS] V6-6: linear scan query works before Phase 2
+    [PASS] V6-6: isPhase2Pending==false after completePhase2
+    [PASS] V6-6: trigram search works after Phase 2
+
+--- v6: Phase 2 concurrent mutations ---
+    [PASS] V6-7: fullRewrite for mutation test
+    [PASS] V6-7: load succeeds
+    [PASS] V6-7: Phase 2 pending after load
+    [PASS] V6-7: Phase 2 completed after mutations
+    [PASS] V6-7: record added during Phase 2 is searchable
+    [PASS] V6-7: record deleted during Phase 2 is NOT searchable
+    [PASS] V6-7: liveCount reflects mutations (1030)
+
+--- v6: WAL replay after v6 load ---
+    [PASS] V6-8: fullRewrite for WAL test
+    [PASS] V6-8: WAL open succeeds
+    [PASS] V6-8: load v6 succeeds
+    [PASS] V6-8: WAL has 2 entries
+    [PASS] V6-8: WAL-added record wal_new.txt found
+    [PASS] V6-8: WAL-removed record wal0.txt not found
+    [PASS] V6-8: liveCount correct after WAL replay (200)
+
+--- v6: v5 -> v6 migration ---
+    [PASS] V6-9: v5 fullRewrite succeeds
+    [PASS] V6-9: v6 load of v5 paged file fails as expected
+    [PASS] V6-9: v5 load succeeds
+    [PASS] V6-9: v5 loaded 500 records
+    [PASS] V6-9: v6 fullRewrite from v5 data
+    [PASS] V6-9: v6 load succeeds
+    [PASS] V6-9: v6 has 500 records
+    [PASS] V6-9: lastEventId preserved through migration
+    [PASS] V6-9: path preserved through migration
+    [PASS] V6-9: data consistent after v5->v6 migration
+
+--- v6: path pool integrity ---
+    [PASS] V6-10: fullRewrite with 1000 unique paths
+    [PASS] V6-10: load succeeds
+    [PASS] V6-10: 1000 records loaded
+    [PASS] V6-10: all sampled paths resolve correctly after v6 roundtrip
+    [PASS] V6-10: internPath works on loaded engine (existing path reused)
+    [PASS] V6-10: record with interned path found after addRecord on loaded engine
+
+--- v6: Phase 2 concurrent queries ---
+    [PASS] V6-11: fullRewrite for concurrent query test
+    [PASS] V6-11: load succeeds
+    [PASS] V6-11: no crash during concurrent queries + Phase 2
+    [PASS] V6-11: all 200 queries completed
+    [PASS] V6-11: Phase 2 completed
+    [PASS] V6-11: engine functional after concurrent queries + Phase 2
+
+--- v6: inode/devId not retained ---
+    [PASS] V6-12: fullRewrite for inode/devId test
+    [PASS] V6-12: load succeeds
+    [PASS] V6-12: records reload with zero inode/devId and intact metadata
+    [PASS] V6-13: queued mutation does not block queries during serialization
+    [PASS] V6-13: borrowed columns remain stable while mutation waits
+    [PASS] V6-13: concurrent query returns correct results
+    [PASS] V6-13: queued mutation completes after serialization releases columns
+    [PASS] V6-13: unwritable destination fails cleanly
+    [PASS] V6-13: write failure releases both locks
+
+
+╔══════════════════════════════════════════╗
+║  Part 72: Case-Sensitive Trigram (P24)   ║
+╚══════════════════════════════════════════╝
+
+  Part 72 summary: 15 passed, 0 failed
+
+
+── Part 77: Specialized scans and bounded results ──
+    [PASS] Native directory matching agrees with flattened components, including adjacency, Unicode and truncation
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: needle
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: case:needleHit
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: a
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: *.txt
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: regex:needle.*
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: ext:txt
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>=0
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: size:>512
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: folder:
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: path:common
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: !needle
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: common/a
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Bounded worker preserves ordered prefix: <needle|item> size:>0
+    [PASS] Single substring loop agrees with generic AST evaluation: needle
+    [PASS] Single substring loop agrees with generic AST evaluation: case:needleHit
+    [PASS] Single substring loop agrees with generic AST evaluation: a
+    [PASS] Single substring loop agrees with generic AST evaluation: 目录
+    [PASS] Bounded ranking survives incremental deletion and insertion
+╔══════════════════════════════════════════╗
+║  Final Summary                           ║
+╚══════════════════════════════════════════╝
+
+  Tests passed: 778
+  Tests failed: 5
+  Result:       SOME FAILED ✗
+

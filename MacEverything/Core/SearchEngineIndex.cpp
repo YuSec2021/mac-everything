@@ -263,6 +263,55 @@ void SearchEngine::removeExtensionForRecord(uint32_t idx) {
     }
 }
 
+void SearchEngine::removeIndexEntriesForRecords(const std::vector<uint32_t>& sortedIdx) {
+    std::vector<std::pair<Trigram, uint32_t>> trigramPairs;
+    std::unordered_map<std::string, std::vector<uint32_t>> byExt;
+    for (uint32_t idx : sortedIdx) {
+        if (idx >= names_.lower().entryCount() || !names_.lower().isLive(idx)) continue;
+        const std::string name(names_.lower().data(idx), names_.lower().length(idx));
+        auto trigrams = ContentIndex::extractTrigrams(name);
+        std::sort(trigrams.begin(), trigrams.end());
+        trigrams.erase(std::unique(trigrams.begin(), trigrams.end()), trigrams.end());
+        for (Trigram t : trigrams) trigramPairs.emplace_back(t, idx);
+        std::string ext = extractExtFromName(name.data(), static_cast<uint16_t>(name.size()));
+        if (!ext.empty()) byExt[std::move(ext)].push_back(idx);  // ascending: input is sorted
+    }
+    std::sort(trigramPairs.begin(), trigramPairs.end());
+    std::vector<uint32_t> ids;
+    for (size_t i = 0; i < trigramPairs.size();) {
+        const Trigram t = trigramPairs[i].first;
+        ids.clear();
+        for (; i < trigramPairs.size() && trigramPairs[i].first == t; ++i) ids.push_back(trigramPairs[i].second);
+        auto it = nameTrigramIndex_.find(t);
+        if (it == nameTrigramIndex_.end()) continue;
+        it->second.eraseSorted(ids.data(), ids.data() + ids.size());
+        if (it->second.empty()) nameTrigramIndex_.erase(it);
+    }
+    for (auto& [ext, removing] : byExt) {
+        auto it = extensionIndex_.find(ext);
+        if (it == extensionIndex_.end()) continue;
+        auto& list = it->second;
+        auto next = removing.begin();
+        list.erase(std::remove_if(list.begin(), list.end(), [&](uint32_t id) {
+            while (next != removing.end() && *next < id) ++next;
+            if (next == removing.end() || *next != id) return false;
+            ++next;
+            return true;
+        }), list.end());
+        if (list.empty()) extensionIndex_.erase(it);
+    }
+}
+
+std::vector<std::pair<std::string, std::vector<uint32_t>>> SearchEngine::postingListsForTesting() const {
+    std::shared_lock lock(mutex_);
+    std::vector<std::pair<std::string, std::vector<uint32_t>>> out;
+    for (const auto& [t, list] : nameTrigramIndex_)
+        out.emplace_back("t" + std::to_string(t), std::vector<uint32_t>(list.begin(), list.end()));
+    for (const auto& [ext, list] : extensionIndex_) out.emplace_back("e" + ext, list);
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Directory-to-record mapping
 // ---------------------------------------------------------------------------
