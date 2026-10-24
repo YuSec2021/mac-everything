@@ -12,74 +12,41 @@ static void runEndToEndTest() {
 
     std::string tmpDir = "/tmp/maceverything_e2e_" + std::to_string(getpid());
     fs::create_directories(tmpDir);
+    // FSEvents reports resolved paths (/private/tmp/...), and so does the index.
+    const std::string realDir = fs::canonical(tmpDir).string();
 
     SearchEngine engine;
     std::mutex mtx;
     std::condition_variable cv;
     std::atomic<int> changeCount{0};
 
+    // Same translation and rescans as the app's live monitoring, applied synchronously.
     FileSystemWatcher watcher;
     watcher.start(tmpDir, [&](std::vector<FileSystemWatcher::Event> events) {
-        for (const auto& event : events) {
-            const std::string& path = event.path;
-            FSEventStreamEventFlags flags = event.flags;
-
-            bool itemRemoved = (flags & kFSEventStreamEventFlagItemRemoved) != 0;
-            bool itemRenamed = (flags & kFSEventStreamEventFlagItemRenamed) != 0;
-
-            struct stat st;
-            bool exists = (lstat(path.c_str(), &st) == 0);
-
-            if (itemRemoved || (itemRenamed && !exists)) {
-                engine.removeByPath(path);
-            } else if (exists) {
-                std::string dirPath, fileName;
-                size_t lastSlash = path.rfind('/');
-                if (lastSlash != std::string::npos) {
-                    dirPath = path.substr(0, lastSlash);
-                    fileName = path.substr(lastSlash + 1);
-                } else {
-                    dirPath = ".";
-                    fileName = path;
-                }
-                if (fileName.empty()) continue;
-
-                uint8_t type = 4;
-                if (S_ISREG(st.st_mode))     type = 1;
-                else if (S_ISDIR(st.st_mode)) type = 2;
-                else if (S_ISLNK(st.st_mode)) type = 3;
-
-                FileRecord record;
-                record.name = fileName;
-                record.path = dirPath;
-                record.type = type;
-                record.size = S_ISREG(st.st_mode) ? static_cast<uint64_t>(st.st_size) : 0;
-                record.modTime = st.st_mtime;
-
-                engine.updateByPath(path, std::move(record));
-            }
-        }
+        ServiceEngine::FSEventMutations mutations;
+        ServiceEngine::collectFSEventMutations(events, engine, /*honorMustScanSubDirs=*/true, mutations);
+        engine.batchMutate(std::move(mutations.ops));
+        for (const auto& dir : mutations.rescanDirs) ServiceEngine::rescanDirectoryInto(engine, dir);
         changeCount.fetch_add(1);
         cv.notify_all();
     });
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-    auto waitForChange = [&](int prevCount, int timeoutMs) -> bool {
+    // Poll the index: event batches can split one change across several callbacks.
+    auto waitUntil = [&](auto done, int timeoutMs) {
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
         std::unique_lock<std::mutex> lock(mtx);
-        return cv.wait_for(lock, std::chrono::milliseconds(timeoutMs), [&] {
-            return changeCount.load() > prevCount;
-        });
+        while (!done()) {
+            if (cv.wait_until(lock, deadline) == std::cv_status::timeout) return done();
+        }
+        return true;
     };
+    auto count = [&](const std::string& q) { return engine.query(q, 0).size(); };
 
     // Create a file
-    int prevCount = changeCount.load();
-    {
-        std::ofstream ofs(tmpDir + "/e2e_test.txt");
-        ofs << "e2e test content\n";
-    }
-    waitForChange(prevCount, 3000);
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    fsInChild("printf 'e2e test content\\n' > '" + tmpDir + "/e2e_test.txt'");
+    waitUntil([&] { return count("e2e_test") == 1; }, 3000);
 
     auto res = engine.query("e2e_test");
     check(res.size() == 1, "E2E: Created file appears in search");
@@ -91,29 +58,49 @@ static void runEndToEndTest() {
     check(engine.liveRecordCount() >= 1, "E2E: liveRecordCount >= 1");
 
     // Rename the file
-    prevCount = changeCount.load();
-    fs::rename(tmpDir + "/e2e_test.txt", tmpDir + "/e2e_renamed.txt");
-    waitForChange(prevCount, 3000);
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-
-    res = engine.query("e2e_renamed");
-    check(res.size() == 1, "E2E: Renamed file appears in search");
-    // The old name should be gone (tombstoned)
-    res = engine.query("e2e_test");
-    // Note: "e2e_test" is a substring of nothing after rename, but "e2e_renamed" does not contain "e2e_test"
-    // Actually "e2e_test" won't match "e2e_renamed" since query matches on filename only
-    // Let's verify the exact old path is removed
-    bool oldRemoved = !engine.removeByPath(tmpDir + "/e2e_test.txt");
-    check(oldRemoved, "E2E: Old path no longer in index");
+    fsInChild("mv '" + tmpDir + "/e2e_test.txt' '" + tmpDir + "/e2e_renamed.txt'");
+    waitUntil([&] { return count("e2e_renamed") == 1 && count("e2e_test") == 0; }, 3000);
+    check(count("e2e_renamed") == 1, "E2E: Renamed file appears in search");
+    check(engine.indexForPath(realDir + "/e2e_test.txt") == UINT32_MAX, "E2E: Old path no longer in index");
 
     // Delete the file
-    prevCount = changeCount.load();
-    fs::remove(tmpDir + "/e2e_renamed.txt");
-    waitForChange(prevCount, 3000);
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    fsInChild("rm '" + tmpDir + "/e2e_renamed.txt'");
+    waitUntil([&] { return count("e2e_renamed") == 0; }, 3000);
+    check(count("e2e_renamed") == 0, "E2E: Deleted file removed from search");
 
-    res = engine.query("e2e_renamed");
-    check(res.empty(), "E2E: Deleted file removed from search");
+    // Delete a directory tree. FSEvents may report only the top directory, so the
+    // whole subtree must go with it.
+    fsInChild("mkdir -p '" + tmpDir + "/tree/nested/deep' && cd '" + tmpDir + "/tree' && "
+              "i=0; while [ $i -lt 20 ]; do touch e2etree_top$i.log nested/e2etree_mid$i.log nested/deep/e2etree_low$i.log; i=$((i+1)); done");
+    bool treeIndexed = waitUntil([&] { return count("e2etree") == 60; }, 5000);
+    check(treeIndexed, "E2E: New directory tree is indexed");
+    fsInChild("rm -rf '" + tmpDir + "/tree'");
+    waitUntil([&] { return count("e2etree") == 0 && engine.indexForPath(realDir + "/tree") == UINT32_MAX; }, 5000);
+    check(count("e2etree") == 0, "E2E: Deleting a directory tree removes everything below it");
+    check(engine.indexForPath(realDir + "/tree") == UINT32_MAX &&
+          engine.indexForPath(realDir + "/tree/nested") == UINT32_MAX,
+          "E2E: Deleted directories leave no records");
+
+    // Rename a directory: the old paths disappear and the moved files are indexed
+    // under the new path, although they produce no events of their own.
+    fsInChild("mkdir -p '" + tmpDir + "/src/inner' && cd '" + tmpDir + "/src/inner' && "
+              "i=0; while [ $i -lt 10 ]; do touch e2emove$i.txt; i=$((i+1)); done");
+    waitUntil([&] { return count("e2emove") == 10; }, 5000);
+    fsInChild("mv '" + tmpDir + "/src' '" + tmpDir + "/dst'");
+    auto movedUnder = [&](const std::string& dir) {
+        size_t n = 0;
+        for (uint32_t idx : engine.query("e2emove", 0))
+            if (engine.resolveRecordPath(idx) == realDir + "/" + dir + "/inner") ++n;
+        return n;
+    };
+    // The moved directory's contents arrive through a rescan of the new path.
+    bool moved = waitUntil([&] { return movedUnder("dst") == 10 && movedUnder("src") == 0; }, 5000);
+    check(moved, "E2E: Renaming a directory moves its files to the new path");
+    check(engine.indexForPath(realDir + "/src/inner/e2emove0.txt") == UINT32_MAX,
+          "E2E: Old directory paths no longer in index");
+    const uint32_t dstIdx = engine.indexForPath(realDir + "/dst");
+    check(dstIdx != UINT32_MAX && engine.getRecord(dstIdx).type == 2,
+          "E2E: Renamed directory keeps its own record");
 
     watcher.stop();
     fs::remove_all(tmpDir);

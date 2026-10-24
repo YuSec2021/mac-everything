@@ -85,6 +85,23 @@ static bool runPart40() {
         check(!se->isScanning(), "Not scanning after scan completion");
         check(se->liveRecordCount() == finalCount, "liveRecordCount matches finalCount");
 
+        // Queued rescans must keep their own copy of the path: the caller's string
+        // is gone before the block runs, and an empty path would match every record.
+        if (searchEngine) {
+            { std::ofstream f(tmpBase / "subdir" / "added_later.txt"); f << "x"; }
+            const uint32_t before = searchEngine->liveRecordCount();
+            dispatch_semaphore_t rescanned = dispatch_semaphore_create(0);
+            se->onIndexChanged = [&] { dispatch_semaphore_signal(rescanned); };
+            // Same spelling as the scan root, so the rescan replaces the scanned records.
+            se->rescanSubtree((tmpBase / "subdir").string());
+            const bool done = dispatch_semaphore_wait(rescanned, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC)) == 0;
+            se->onIndexChanged = nullptr;
+            check(done && !searchEngine->query("added_later", 10).empty(),
+                  "Queued rescan indexes the directory it was given");
+            check(searchEngine->liveRecordCount() == before + 1 && !searchEngine->query("hello", 10).empty(),
+                  "Queued rescan leaves records outside the directory untouched");
+        }
+
         // Test 5: Shutdown
         se->shutdown();
         check(!se->isScanning(), "Not scanning after shutdown");
@@ -115,6 +132,88 @@ static bool runPart40() {
         check(finalCount >= 4, "Incremental found at least 4 records");
 
         se->shutdown();
+    }
+
+    // FSEvents translation, with synthetic events: macOS may report a deleted or
+    // moved directory as a single event for the directory alone.
+    {
+        const auto base = fs::temp_directory_path() / ("me_fsev_" + std::to_string(getpid()));
+        fs::create_directories(base / "kept");
+        const std::string root = fs::canonical(base).string();
+        SearchEngine engine;
+        auto add = [&](const std::string& dir, const std::string& name, uint8_t type) {
+            FileRecord rec;
+            rec.name = name;
+            rec.path = dir;
+            rec.type = type;
+            engine.addRecord(std::move(rec));
+        };
+        add(root, "gone", 2);
+        add(root + "/gone", "a.txt", 1);
+        add(root + "/gone", "sub", 2);
+        add(root + "/gone/sub", "b.txt", 1);
+        add(root, "gone.txt", 1); // shares the prefix but is not below the directory
+        add(root, "kept", 2);
+
+        auto translate = [&](std::vector<FileSystemWatcher::Event> events) {
+            ServiceEngine::FSEventMutations out;
+            ServiceEngine::collectFSEventMutations(events, engine, true, out);
+            return out;
+        };
+        const auto removedDir = kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemIsDir;
+        auto out = translate({{root + "/gone", removedDir}});
+        check(out.ops.size() == 1 && out.ops[0].type == SearchEngine::MutationOp::REMOVE_TREE && out.rescanDirs.empty(),
+              "FSEvents: removed directory becomes one subtree removal");
+        engine.batchMutate(std::move(out.ops));
+        check(engine.indexForPath(root + "/gone") == UINT32_MAX && engine.indexForPath(root + "/gone/a.txt") == UINT32_MAX &&
+              engine.indexForPath(root + "/gone/sub/b.txt") == UINT32_MAX && engine.indexForPath(root + "/gone.txt") != UINT32_MAX,
+              "FSEvents: subtree removal clears the directory and everything below it, nothing beside it");
+
+        // Removals below a subtree removal in the same batch collapse into it, and
+        // later events for directories already emptied change nothing.
+        add(root, "deep", 2);
+        add(root + "/deep", "sub", 2);
+        add(root + "/deep/sub", "x.txt", 1);
+        add(root, "deeper.txt", 1);
+        out = translate({{root + "/deep/sub/x.txt", kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemIsFile},
+                         {root + "/deep/sub", removedDir}, {root + "/deep", removedDir}});
+        check(out.ops.size() == 1 && out.ops[0].type == SearchEngine::MutationOp::REMOVE_TREE && out.ops[0].path == root + "/deep",
+              "FSEvents: removals inside a removed directory collapse into one subtree removal");
+        engine.batchMutate(std::move(out.ops));
+        const uint32_t liveAfterTree = engine.liveRecordCount();
+        out = translate({{root + "/deep/sub", removedDir}});
+        engine.batchMutate(std::move(out.ops));
+        check(engine.indexForPath(root + "/deep/sub/x.txt") == UINT32_MAX && engine.indexForPath(root + "/deeper.txt") != UINT32_MAX &&
+              engine.liveRecordCount() == liveAfterTree,
+              "FSEvents: a late event for an emptied directory removes nothing else");
+
+        // No file/dir flag: the index decides whether the path was a directory.
+        add(root, "old", 2);
+        add(root + "/old", "c.txt", 1);
+        out = translate({{root + "/old", kFSEventStreamEventFlagItemRenamed}, {root + "/gone.txt", kFSEventStreamEventFlagItemRemoved}});
+        check(out.ops.size() == 2 && out.ops[0].type == SearchEngine::MutationOp::REMOVE_TREE &&
+              out.ops[1].type == SearchEngine::MutationOp::REMOVE,
+              "FSEvents: unflagged events use the indexed type (directory vs file)");
+
+        // A directory that arrives by rename is recorded and rescanned.
+        out = translate({{root + "/kept", kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemIsDir}});
+        check(out.ops.size() == 1 && out.ops[0].type == SearchEngine::MutationOp::UPDATE &&
+              out.rescanDirs == std::vector<std::string>{root + "/kept"},
+              "FSEvents: directory renamed into place is updated and rescanned");
+
+        // Removed and recreated within one batch: resync instead of deleting.
+        out = translate({{root + "/kept", removedDir}});
+        check(out.ops.size() == 1 && out.ops[0].type == SearchEngine::MutationOp::UPDATE && out.rescanDirs.size() == 1,
+              "FSEvents: directory removed then recreated is rescanned, not deleted");
+
+        // Rescans keep the directory's own record and replace what is below it.
+        std::ofstream(base / "kept" / "fresh.txt") << "x";
+        add(root + "/kept", "stale.txt", 1);
+        ServiceEngine::rescanDirectoryInto(engine, root + "/kept");
+        check(engine.indexForPath(root + "/kept") != UINT32_MAX && engine.indexForPath(root + "/kept/fresh.txt") != UINT32_MAX &&
+              engine.indexForPath(root + "/kept/stale.txt") == UINT32_MAX,
+              "FSEvents: rescan keeps the directory record and syncs its contents");
+        fs::remove_all(base);
     }
 
     // Clean up

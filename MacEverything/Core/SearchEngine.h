@@ -194,7 +194,8 @@ public:
 
     /// Batch mutation operation descriptor.
     struct MutationOp {
-        enum Type { REMOVE, UPDATE };
+        /// REMOVE_TREE removes the path and everything below it (a deleted directory).
+        enum Type { REMOVE, UPDATE, REMOVE_TREE };
         Type type;
         std::string path;
         FileRecord record;  // only used for UPDATE
@@ -427,8 +428,11 @@ private:
     uint32_t rebuildPathIndex();
     /// Rebuild pathLookup_, lowerPathLookup_ and dirCanon_ from pathPool_.
     void rebuildDirLookups();
-    /// Mapped records at or below a lowercase path prefix, ascending.
-    std::vector<uint32_t> pathRecordsUnder(const std::string& lowerPrefix) const;
+    /// Mapped records at or below a lowercase path prefix, ascending. With
+    /// mirrorsFilesystem (the index follows the filesystem, so every record has
+    /// directory records up to the prefix), the subtree is walked instead of
+    /// scanning every directory.
+    std::vector<uint32_t> pathRecordsUnder(const std::string& lowerPrefix, bool mirrorsFilesystem = false) const;
     std::atomic<uint32_t> liveCount_{0};
     mutable std::shared_mutex mutex_;
     mutable std::mutex mutationGate_;
@@ -467,6 +471,7 @@ private:
     /// Unlocked variants — caller must hold unique_lock on mutex_.
     bool removeByPathUnlocked(const std::string& fullPath);
     void updateByPathUnlocked(const std::string& fullPath, FileRecord&& updated);
+    uint32_t removeByPathPrefixUnlocked(const std::string& pathPrefix, bool mirrorsFilesystem = false);
 
     /// Build trigram index from names_.lower() (called inside loadRecords/compactRecords under lock)
     void buildTrigramIndex();

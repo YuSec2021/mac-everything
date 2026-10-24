@@ -240,7 +240,7 @@ static void runMemoryOptimizationTests() {
         check(rescanned.removeByPathPrefix("/a/bc") == 1 && rescanned.liveRecordCount() == live - 1,
               "PrefixRemove: unmapped duplicates are not removed");
 
-        // Before Phase 2 the directory map is incomplete; removal scans every record.
+        // Before Phase 2 completes, removal still sees every record, including one added meanwhile.
         const std::string file = "/tmp/test_memopt_prefix_" + std::to_string(getpid()) + ".v6";
         SearchEngine saved;
         fill(saved);
@@ -254,7 +254,7 @@ static void runMemoryOptimizationTests() {
         extra.type = 1;
         loaded.addRecord(std::move(extra));
         check(pending && removesExactly(loaded, "/a/bc") && removesExactly(loaded, "/T"),
-              "PrefixRemove: pending Phase 2 falls back to a full scan");
+              "PrefixRemove: removal before Phase 2 completes matches the full-path rule");
         std::remove(file.c_str());
     }
 

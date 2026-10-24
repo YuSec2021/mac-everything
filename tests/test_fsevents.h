@@ -3,6 +3,14 @@
 //  Part 4: FSEvents Integration Test
 // ═══════════════════════════════════════════════════════
 
+// The watcher passes kFSEventStreamCreateFlagIgnoreSelf so the app's own index
+// writes never trigger rescans; that also hides changes this test process makes.
+// File changes therefore run in a child shell.
+static void fsInChild(const std::string& shellCommand) {
+    if (std::system(shellCommand.c_str()) != 0)
+        std::cout << "    (child command failed: " << shellCommand << ")\n";
+}
+
 static void runFSEventsTest() {
     std::cout << "========================================\n";
     std::cout << "  Part 4: FSEvents Integration Test\n";
@@ -41,10 +49,7 @@ static void runFSEventsTest() {
     std::cout << "  --- File Create ---\n";
     receivedEvents.clear();
     auto createStart = std::chrono::steady_clock::now();
-    {
-        std::ofstream ofs(tmpDir + "/testfile.txt");
-        ofs << "hello world\n";
-    }
+    fsInChild("printf 'hello world\\n' > '" + tmpDir + "/testfile.txt'");
     bool gotCreate = waitForEvents(1, 3000);
     auto createEnd = std::chrono::steady_clock::now();
     double createLatency = std::chrono::duration<double>(createEnd - createStart).count() * 1000;
@@ -67,10 +72,7 @@ static void runFSEventsTest() {
     std::cout << "\n  --- File Modify ---\n";
     receivedEvents.clear();
     auto modStart = std::chrono::steady_clock::now();
-    {
-        std::ofstream ofs(tmpDir + "/testfile.txt", std::ios::app);
-        ofs << "more content\n";
-    }
+    fsInChild("printf 'more content\\n' >> '" + tmpDir + "/testfile.txt'");
     bool gotModify = waitForEvents(1, 3000);
     auto modEnd = std::chrono::steady_clock::now();
     double modLatency = std::chrono::duration<double>(modEnd - modStart).count() * 1000;
@@ -85,7 +87,7 @@ static void runFSEventsTest() {
     std::cout << "\n  --- File Rename ---\n";
     receivedEvents.clear();
     auto renStart = std::chrono::steady_clock::now();
-    fs::rename(tmpDir + "/testfile.txt", tmpDir + "/renamed.txt");
+    fsInChild("mv '" + tmpDir + "/testfile.txt' '" + tmpDir + "/renamed.txt'");
     bool gotRename = waitForEvents(1, 3000);
     auto renEnd = std::chrono::steady_clock::now();
     double renLatency = std::chrono::duration<double>(renEnd - renStart).count() * 1000;
@@ -100,7 +102,7 @@ static void runFSEventsTest() {
     std::cout << "\n  --- File Delete ---\n";
     receivedEvents.clear();
     auto delStart = std::chrono::steady_clock::now();
-    fs::remove(tmpDir + "/renamed.txt");
+    fsInChild("rm '" + tmpDir + "/renamed.txt'");
     bool gotDelete = waitForEvents(1, 3000);
     auto delEnd = std::chrono::steady_clock::now();
     double delLatency = std::chrono::duration<double>(delEnd - delStart).count() * 1000;
@@ -115,10 +117,7 @@ static void runFSEventsTest() {
     std::cout << "\n  --- Batch Create (100 files) ---\n";
     receivedEvents.clear();
     auto batchStart = std::chrono::steady_clock::now();
-    for (int i = 0; i < 100; i++) {
-        std::ofstream ofs(tmpDir + "/batch_" + std::to_string(i) + ".txt");
-        ofs << "batch " << i << "\n";
-    }
+    fsInChild("cd '" + tmpDir + "' && i=0; while [ $i -lt 100 ]; do echo \"batch $i\" > batch_$i.txt; i=$((i+1)); done");
     // Wait for at least some events (FSEvents coalesces)
     bool gotBatch = waitForEvents(10, 5000);
     auto batchEnd = std::chrono::steady_clock::now();

@@ -7,6 +7,7 @@
 #include "HttpServer.h"
 #include "InstanceLock.h"
 #include "RescanDebounce.h"
+#include <sys/stat.h>
 #include <memory>
 #include <atomic>
 #include <shared_mutex>
@@ -52,6 +53,22 @@ public:
 
     // ── Public operations ──
     void rescanSubtree(const std::string& dir);
+
+    // ── FSEvents translation (ServiceEngine+FSEvents.cpp), shared by replay, live monitoring and tests ──
+    struct FSEventMutations {
+        std::vector<SearchEngine::MutationOp> ops;
+        std::vector<std::pair<std::string, bool>> contentUpdates; // path, isRemove
+        std::vector<std::string> rescanDirs;
+    };
+    /// Translate one batch of events into index mutations, content updates and
+    /// directories whose contents must be rescanned. Returns true if ops changed.
+    static bool collectFSEventMutations(const std::vector<FileSystemWatcher::Event>& events,
+                                        const SearchEngine& engine, bool honorMustScanSubDirs,
+                                        FSEventMutations& out);
+    /// Record for an existing path (name, parent, type, size, times), or false for "/" or "".
+    static bool makeRecordForPath(const std::string& path, const struct stat& st, FileRecord& record);
+    /// Replace everything below dir with a fresh scan, keeping dir's own record. Synchronous.
+    static void rescanDirectoryInto(SearchEngine& engine, const std::string& dir);
     void rebuildContentIndex();
     void compactIndex();
 

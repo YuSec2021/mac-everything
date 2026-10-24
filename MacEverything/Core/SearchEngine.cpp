@@ -109,10 +109,10 @@ uint32_t SearchEngine::rebuildPathIndex() {
     return live;
 }
 
-std::vector<uint32_t> SearchEngine::pathRecordsUnder(const std::string& lowerPrefix) const {
+std::vector<uint32_t> SearchEngine::pathRecordsUnder(const std::string& lowerPrefix, bool mirrorsFilesystem) const {
     std::vector<uint32_t> matches;
-    if (phase2Pending_.load(std::memory_order_acquire) || pathIdxToRecords_.empty()) {
-        // The directory map is incomplete until Phase 2: check every mapped record.
+    if (pathIdxToRecords_.empty()) {
+        // No directory map yet: check every mapped record.
         pathIndex_.forEach([&](uint32_t idx) {
             const auto path = lowerFullPath(idx);
             if (path.size() >= lowerPrefix.size() &&
@@ -128,16 +128,42 @@ std::vector<uint32_t> SearchEngine::pathRecordsUnder(const std::string& lowerPre
         const std::string below = lowerPrefix + '/';
         const auto lower = pathPool_.lower();
         const auto keys = pathKeys();
-        std::string dir;
-        for (uint32_t d = 0; d < lower.entryCount(); ++d) {
-            if (size_t(lower.length(d)) + 1 < below.size()) continue;
-            lower.reconstruct(d, dir);
-            if (!dir.empty() && dir.back() != '/') dir += '/';
-            if (dir.compare(0, below.size(), below) != 0) continue;
-            pathIdxToRecords_.forEach(d, types_, [&](uint32_t idx) {
-                // Orphaned duplicates are live but unmapped, and stay untouched.
-                if (pathIndex_.slotOf(idx, keys.hashOf(idx)) != me::PathRecordTable::npos) matches.push_back(idx);
-            });
+        auto mapped = [&](uint32_t idx) {
+            // Orphaned duplicates are live but unmapped, and stay untouched.
+            return pathIndex_.slotOf(idx, keys.hashOf(idx)) != me::PathRecordTable::npos;
+        };
+        if (mirrorsFilesystem) {
+            // When the index follows the filesystem, every record below a directory
+            // hangs off a chain of directory records, so walking the directory map
+            // down from the prefix visits exactly the subtree, in time proportional
+            // to its size instead of to the number of directories in the index.
+            std::vector<std::string> pending{lowerPrefix};
+            while (!pending.empty()) {
+                const std::string dirLower = std::move(pending.back());
+                pending.pop_back();
+                // makeFullPath joins "a" and "a/" alike, so look up both spellings.
+                const std::string alternate = !dirLower.empty() && dirLower.back() == '/'
+                    ? dirLower.substr(0, dirLower.size() - 1) : dirLower + '/';
+                for (const std::string* key : {&dirLower, &alternate}) {
+                    auto it = me::findPathRecord(lowerPathLookup_, *key, [&](uint32_t i) { return lower.view(i); });
+                    if (it == lowerPathLookup_.end()) continue;
+                    pathIdxToRecords_.forEach(it->second, types_, [&](uint32_t idx) {
+                        if (mapped(idx)) matches.push_back(idx);
+                        if (types_[idx] == 2 || types_[idx] == 5) pending.push_back(lowerFullPath(idx));
+                    });
+                }
+            }
+        } else {
+            std::string dir;
+            for (uint32_t d = 0; d < lower.entryCount(); ++d) {
+                if (size_t(lower.length(d)) + 1 < below.size()) continue;
+                lower.reconstruct(d, dir);
+                if (!dir.empty() && dir.back() != '/') dir += '/';
+                if (dir.compare(0, below.size(), below) != 0) continue;
+                pathIdxToRecords_.forEach(d, types_, [&](uint32_t idx) {
+                    if (mapped(idx)) matches.push_back(idx);
+                });
+            }
         }
         if (const uint32_t idx = findPathRecord(lowerPrefix); idx != kNoRecord) matches.push_back(idx);
     }
@@ -415,10 +441,13 @@ bool SearchEngine::removeByPath(const std::string& fullPath) {
 
 uint32_t SearchEngine::removeByPathPrefix(const std::string& pathPrefix) {
     auto lock = lockForMutation();
+    return removeByPathPrefixUnlocked(pathPrefix);
+}
 
+uint32_t SearchEngine::removeByPathPrefixUnlocked(const std::string& pathPrefix, bool mirrorsFilesystem) {
     std::string lowerPrefix = me::toLower(pathPrefix);
     uint32_t removed = 0;
-    const auto matches = pathRecordsUnder(lowerPrefix);
+    const auto matches = pathRecordsUnder(lowerPrefix, mirrorsFilesystem);
     // Name indexes must be cleaned before tombstoning clears names_.lower().
     const bool batched = matches.size() >= kBatchIndexRemoval;
     if (batched) removeIndexEntriesForRecords(matches);
@@ -550,6 +579,8 @@ void SearchEngine::batchMutate(std::vector<MutationOp>&& ops) {
     for (auto& op : ops) {
         if (op.type == MutationOp::REMOVE) {
             removeByPathUnlocked(op.path);
+        } else if (op.type == MutationOp::REMOVE_TREE) {
+            removeByPathPrefixUnlocked(op.path, /*mirrorsFilesystem=*/true);
         } else {
             updateByPathUnlocked(op.path, std::move(op.record));
         }

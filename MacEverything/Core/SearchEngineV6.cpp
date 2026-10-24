@@ -38,6 +38,9 @@ void SearchEngine::loadRecordsV6(StringPool&& origNamePool,
     // Rebuild pathLookup_, lowerPathLookup_ and canonical directories from pathPool_ entries
     rebuildDirLookups();
     uint32_t actualLive = rebuildPathIndex();
+    // Built here rather than in Phase 2: FSEvents replay runs before Phase 2 and
+    // removes deleted directory trees through this map.
+    rebuildPathIdxToRecords();
 
     liveCount_.store(actualLive, std::memory_order_relaxed);
 
@@ -65,16 +68,12 @@ void SearchEngine::completePhase2() {
     std::vector<uint8_t> snapTypes;
     ModTimeColumn snapModTimes;
     StringPool snapNamePool;
-    std::vector<uint32_t> snapPathIndices;
-    uint32_t snapPathPoolSize;
     uint32_t snapSize;
     {
         std::shared_lock lock(mutex_);
         snapTypes = types_;
         snapModTimes = modTimes_;
         snapNamePool = names_.lower().flatSnapshot();
-        snapPathIndices = pathIndices_;
-        snapPathPoolSize = pathPool_.entryCount();
         snapSize = static_cast<uint32_t>(types_.size());
     }
 
@@ -82,8 +81,6 @@ void SearchEngine::completePhase2() {
     auto trigramIndex = buildTrigramIndexFromData(snapTypes, snapNamePool);
     auto extensionIndex = buildExtensionIndexFromData(snapTypes, snapNamePool);
     snapNamePool = StringPool{};
-    auto pathIdxToRecords = buildPathIdxToRecordsFromData(snapTypes, snapPathIndices, snapPathPoolSize);
-    std::vector<uint32_t>{}.swap(snapPathIndices);
     auto recentCache = buildRecentCacheFromData(snapTypes, snapModTimes, kRecentCacheSize);
     ModTimeColumn{}.swap(snapModTimes);
 
@@ -94,7 +91,6 @@ void SearchEngine::completePhase2() {
         auto lock = lockForMutation();
 
         nameTrigramIndex_ = std::move(trigramIndex);
-        pathIdxToRecords_ = std::move(pathIdxToRecords);
         recentCache_ = std::move(recentCache);
         extensionIndex_ = std::move(extensionIndex);
 
@@ -105,7 +101,7 @@ void SearchEngine::completePhase2() {
             if (types_[i] == 0) continue;
             // Add trigrams for this record
             addTrigramsForRecord(i, names_.lower().data(i), names_.lower().length(i));
-            addPathRecord(i);
+            // pathIdxToRecords_ is live since load; addRecord already appended i.
             addExtensionForRecord(i);
             addToRecentCache(i, static_cast<time_t>(modTimes_[i]));
             replayCount++;
