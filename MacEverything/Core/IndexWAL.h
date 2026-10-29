@@ -47,6 +47,9 @@ public:
     bool isDirty() const { return dirty_.load(std::memory_order_relaxed); }
     void clearDirty() { dirty_.store(false, std::memory_order_relaxed); }
 
+    /// True if append() rejected an entry because the WAL hit kMaxWALSize.
+    bool hasOverflowed() const { return overflowed_.load(std::memory_order_relaxed); }
+
     /// Set the number of entries between automatic fsyncs (0 = never auto-fsync).
     void setSyncInterval(uint64_t entries) { syncInterval_ = entries; }
 
@@ -82,6 +85,7 @@ private:
     uint64_t syncInterval_ = 64;  // fsync every 64 entries by default
     size_t currentSize_ = 0;
     std::atomic<bool> dirty_{false};
+    std::atomic<bool> overflowed_{false};
     std::mutex mutex_;
 
     static bool writeRecord(FILE* f, const FileRecord& record);

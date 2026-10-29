@@ -352,12 +352,27 @@ static void testPagedAdaptiveInterval() {
 
     // With no dirty pages and no WAL pressure, should get max interval
     engine->clearDirtyPages();
-    // No easy way to test computeAdaptiveInterval directly (private),
-    // but we can verify the constants are sane
-    check(IndexPersistence::kMinIntervalSec == 30.0, "P32-6: kMinIntervalSec = 30");
-    check(IndexPersistence::kBaseIntervalSec == 300.0, "P32-6: kBaseIntervalSec = 300");
-    check(IndexPersistence::kMaxIntervalSec == 600.0, "P32-6: kMaxIntervalSec = 600");
-    check(IndexPersistence::kWALSizeFlushThreshold == 2 * 1024 * 1024, "P32-6: WAL threshold = 2MB");
+    // Auto-flush policy: rewrites are rate-limited and WAL-driven
+    using AF = IndexPersistence::AutoFlush;
+    const double minGap = IndexPersistence::kMinRewriteIntervalSec;
+    const double maxGap = IndexPersistence::kMaxRewriteIntervalSec;
+    const size_t soft = IndexPersistence::kWALSoftFlushBytes;
+    const size_t urgent = IndexPersistence::kWALUrgentFlushBytes;
+    check(urgent < IndexWAL::kMaxWALSize, "P32-6: urgent flush threshold below WAL cap");
+    check(IndexPersistence::decideAutoFlush(soft, 100000, false, minGap - 1) == AF::None,
+          "P32-6: no rewrite inside the minimum gap");
+    check(IndexPersistence::decideAutoFlush(soft, 0, false, minGap) == AF::Forced,
+          "P32-6: soft WAL size triggers rewrite after the minimum gap");
+    check(IndexPersistence::decideAutoFlush(soft - 1, 5000, false, maxGap - 1) == AF::None,
+          "P32-6: small WAL waits for the maximum gap");
+    check(IndexPersistence::decideAutoFlush(1024, IndexPersistence::kCompactThreshold, false, maxGap) == AF::Normal,
+          "P32-6: small WAL rewritten after the maximum gap");
+    check(IndexPersistence::decideAutoFlush(1024, 10, false, maxGap) == AF::None,
+          "P32-6: tiny WAL never forces a rewrite");
+    check(IndexPersistence::decideAutoFlush(urgent, 0, false, 0) == AF::Forced,
+          "P32-6: urgent WAL size bypasses the minimum gap");
+    check(IndexPersistence::decideAutoFlush(64, 0, true, 0) == AF::Forced,
+          "P32-6: WAL overflow forces a rewrite");
 
     // Verify that dirty page tracking works correctly across pages
     // updateByPath tombstones old record + appends new at end

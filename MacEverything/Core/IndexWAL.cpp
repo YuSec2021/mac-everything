@@ -130,6 +130,9 @@ bool IndexWAL::append(WALOp op, const std::string& fullPath, const FileRecord& r
 
     // H-6: Check WAL file size limit before writing
     if (currentSize_ >= kMaxWALSize) {
+        // Mutations past the cap live only in memory until the next full
+        // rewrite; flag it so the persistence layer rewrites promptly.
+        overflowed_.store(true, std::memory_order_relaxed);
         return false;
     }
 

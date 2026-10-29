@@ -2,7 +2,7 @@
 #include "Logger.h"
 #include <cerrno>
 #include <cstring>
-#include <cmath>
+#include <chrono>
 
 IndexPersistence::IndexPersistence(std::shared_ptr<SearchEngine> engine,
                                    const std::string& basePath,
@@ -177,6 +177,7 @@ void IndexPersistence::flush(const IndexMetadata& metadata, bool force) {
     bool writeOk = flatWriter_->fullRewrite(*engine_, metadata);
 
     if (writeOk) {
+        markRewritten();
         LOG_INFO("IndexPersistence", "Flushed v6 flat index, lastEventId=" << metadata.lastEventId
                   << ", liveRecords=" << engine_->liveRecordCount());
     } else {
@@ -237,6 +238,7 @@ void IndexPersistence::fullCompact(const IndexMetadata& metadata) {
 
     // 4. Full rewrite v6 flat format
     if (flatWriter_->fullRewrite(*engine_, metadata)) {
+        markRewritten();
         LOG_INFO("IndexPersistence", "Full compaction done, lastEventId=" << metadata.lastEventId
                   << ", liveRecords=" << engine_->liveRecordCount());
     } else {
@@ -258,37 +260,48 @@ void IndexPersistence::fullCompact(const IndexMetadata& metadata) {
     if (oldWal) oldWal->close();
 }
 
-double IndexPersistence::computeAdaptiveInterval() const {
-    auto dirtyPages = engine_->getDirtyPageNumbers();
-    uint32_t dirtyCount = static_cast<uint32_t>(dirtyPages.size());
-    uint32_t liveCount = engine_->liveRecordCount();
-    uint32_t totalPages = (liveCount + SearchEngine::kRecordsPerPage - 1) / SearchEngine::kRecordsPerPage;
-    if (totalPages == 0) totalPages = 1;
+IndexPersistence::AutoFlush IndexPersistence::decideAutoFlush(size_t walBytes, uint64_t walEntries,
+                                                              bool walOverflowed, double secSinceRewrite) {
+    // The WAL is near (or past) its cap: rewrite now so mutations keep being logged.
+    if (walOverflowed || walBytes >= kWALUrgentFlushBytes) return AutoFlush::Forced;
+    if (secSinceRewrite < kMinRewriteIntervalSec) return AutoFlush::None;
+    if (walBytes >= kWALSoftFlushBytes) return AutoFlush::Forced;
+    if (secSinceRewrite >= kMaxRewriteIntervalSec && walEntries >= kCompactThreshold) return AutoFlush::Normal;
+    return AutoFlush::None;
+}
 
-    double dirtyRatio = static_cast<double>(dirtyCount) / totalPages;
+static int64_t steadyNowNs() {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
-    double interval;
-    if (dirtyRatio > 0.3) {
-        interval = kMinIntervalSec;
-    } else if (dirtyRatio > 0.1) {
-        interval = kBaseIntervalSec * 0.5;
-    } else if (dirtyRatio > 0.01) {
-        interval = kBaseIntervalSec;
-    } else {
-        interval = kMaxIntervalSec;
-    }
+void IndexPersistence::markRewritten() {
+    lastRewriteNs_.store(steadyNowNs(), std::memory_order_relaxed);
+}
 
-    // WAL size override
-    size_t walSize = 0;
+double IndexPersistence::secondsSinceRewrite() const {
+    return static_cast<double>(steadyNowNs() - lastRewriteNs_.load(std::memory_order_relaxed)) / 1e9;
+}
+
+void IndexPersistence::autoFlushTick(uint64_t lastEventId) {
+    size_t walBytes = 0;
+    uint64_t walEntries = 0;
+    bool overflowed = false;
     {
         std::lock_guard<std::mutex> lock(walMutex_);
-        if (wal_) walSize = wal_->currentSize();
+        if (!wal_) return;
+        walBytes = wal_->currentSize();
+        walEntries = wal_->entryCount();
+        overflowed = wal_->hasOverflowed();
     }
-    if (walSize > kWALSizeFlushThreshold) {
-        interval = std::min(interval, kMinIntervalSec);
+    auto decision = decideAutoFlush(walBytes, walEntries, overflowed, secondsSinceRewrite());
+    if (decision == AutoFlush::None) return;
+    if (overflowed) {
+        LOG_ERROR("IndexPersistence", "WAL reached its size cap — rewriting index to restore durability");
     }
-
-    return interval;
+    LOG_INFO("IndexPersistence", "Auto-flush: walBytes=" << walBytes << ", walEntries=" << walEntries
+              << ", secSinceRewrite=" << static_cast<int64_t>(secondsSinceRewrite()));
+    flush(lastEventId, decision == AutoFlush::Forced);
 }
 
 void IndexPersistence::stopTimer() {
@@ -302,44 +315,29 @@ void IndexPersistence::stopTimer() {
         dispatch_release(timerQueue_);
         timerQueue_ = nullptr;
     }
-    currentIntervalSec_ = 0;
 }
 
-void IndexPersistence::rescheduleTimer(double intervalSec) {
-    if (!timer_) return;
-    if (std::abs(intervalSec - currentIntervalSec_) < 1.0) return;
-
-    uint64_t intervalNs = static_cast<uint64_t>(intervalSec * NSEC_PER_SEC);
-    dispatch_source_set_timer(timer_,
-                              dispatch_time(DISPATCH_TIME_NOW, intervalNs),
-                              intervalNs,
-                              30 * NSEC_PER_SEC);
-    currentIntervalSec_ = intervalSec;
-}
-
-void IndexPersistence::startAutoCompaction(double intervalSec, std::shared_ptr<FileSystemWatcher> watcher) {
+void IndexPersistence::startAutoCompaction(double /*intervalSec*/, std::shared_ptr<FileSystemWatcher> watcher) {
     stopTimer();
 
-    currentIntervalSec_ = intervalSec;
+    // The index was just loaded or rebuilt; treat that as the latest rewrite.
+    markRewritten();
     timerQueue_ = dispatch_queue_create("com.maceverything.index.compaction", DISPATCH_QUEUE_SERIAL);
     timer_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, timerQueue_);
 
-    uint64_t intervalNs = static_cast<uint64_t>(intervalSec * NSEC_PER_SEC);
+    uint64_t intervalNs = static_cast<uint64_t>(kCheckIntervalSec * NSEC_PER_SEC);
     dispatch_source_set_timer(timer_,
                               dispatch_time(DISPATCH_TIME_NOW, intervalNs),
                               intervalNs,
-                              30 * NSEC_PER_SEC);
+                              10 * NSEC_PER_SEC);
 
     auto* self = this;
     dispatch_source_set_event_handler(timer_, ^{
-        uint64_t eventId = watcher ? watcher->getLastEventId() : 0;
-        self->flush(eventId);
-        double newInterval = self->computeAdaptiveInterval();
-        self->rescheduleTimer(newInterval);
+        self->autoFlushTick(watcher ? watcher->getLastEventId() : 0);
     });
 
     dispatch_resume(timer_);
-    LOG_INFO("IndexPersistence", "Auto-compaction started (initial interval " << intervalSec << "s)");
+    LOG_INFO("IndexPersistence", "Auto-compaction started (check every " << kCheckIntervalSec << "s)");
 }
 
 void IndexPersistence::stopAutoCompactionAndWait() {
