@@ -226,6 +226,7 @@ inline void runWalCrcTests() {
         FileRecord r{"test.txt", "/tmp", 1, 10, 100, 1, 1};
         bool result = wal.append(WALOp::Add, "/tmp/test.txt", r);
         check(!result, "15.8a append rejected when WAL at size limit");
+        check(wal.hasOverflowed(), "15.8c rejected append flags WAL overflow");
         wal.close();
 
         // Verify small WAL still accepts writes
@@ -235,6 +236,7 @@ inline void runWalCrcTests() {
         wal2.open(walPath);
         result = wal2.append(WALOp::Add, "/tmp/test.txt", r);
         check(result, "15.8b append succeeds on fresh WAL");
+        check(!wal2.hasOverflowed(), "15.8d fresh WAL not flagged as overflowed");
         wal2.close();
 
         fs::remove(walPath);
