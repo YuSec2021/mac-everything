@@ -221,5 +221,38 @@ static void runBatchRescanTests() {
         check(res.size() == 1, "edge: replacement record queryable after full prefix removal");
     }
 
+    // ── Test 5: Rescanning the root replaces every record ──
+    // "/" + "/" never prefixes a path, so a root rescan used to keep every old
+    // record and append the fresh scan on top, duplicating the whole index.
+    std::cout << "  --- Root prefix ---\n";
+    {
+        SearchEngine engine;
+        std::vector<FileRecord> initial;
+        initial.push_back({"Users", "/", 2, 0, 1000});
+        initial.push_back({"me", "/Users", 2, 0, 1000});
+        initial.push_back({"root_note.txt", "/Users/me", 1, 10, 1000});
+        initial.push_back({"top_level.txt", "/", 1, 10, 1000});
+        engine.loadRecords(std::move(initial));
+        check(engine.liveRecordCount() == 4, "root: initial liveRecordCount == 4");
+
+        std::vector<FileRecord> fresh;
+        fresh.push_back({"Users", "/", 2, 0, 2000});
+        fresh.push_back({"me", "/Users", 2, 0, 2000});
+        fresh.push_back({"root_note.txt", "/Users/me", 1, 20, 2000});
+        uint32_t removed = engine.batchRescanPrefix("/", std::move(fresh));
+        check(removed == 4, "root: rescan of / removed all 4 old records");
+        check(engine.liveRecordCount() == 3, "root: rescan of / leaves only the fresh records");
+        check(engine.query("root_note").size() == 1, "root: rescanned file found once");
+        check(engine.query("top_level").empty(), "root: file missing from the fresh scan is gone");
+
+        SearchEngine engine2;
+        std::vector<FileRecord> initial2;
+        initial2.push_back({"a.txt", "/x", 1, 1, 1000});
+        initial2.push_back({"b.txt", "/y/z", 1, 1, 1000});
+        engine2.loadRecords(std::move(initial2));
+        check(engine2.removeByPathPrefix("/") == 2, "root: removeByPathPrefix(\"/\") removes every record");
+        check(engine2.liveRecordCount() == 0, "root: nothing left after removing /");
+    }
+
     std::cout << "\n";
 }

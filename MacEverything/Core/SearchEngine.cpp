@@ -111,13 +111,14 @@ uint32_t SearchEngine::rebuildPathIndex() {
 
 std::vector<uint32_t> SearchEngine::pathRecordsUnder(const std::string& lowerPrefix, bool mirrorsFilesystem) const {
     std::vector<uint32_t> matches;
+    // Paths below the prefix start with "prefix/". The root is already "/";
+    // appending another slash would give "//", which no path starts with.
+    const std::string below = lowerPrefix == "/" ? lowerPrefix : lowerPrefix + '/';
     if (pathIdxToRecords_.empty()) {
         // No directory map yet: check every mapped record.
         pathIndex_.forEach([&](uint32_t idx) {
             const auto path = lowerFullPath(idx);
-            if (path.size() >= lowerPrefix.size() &&
-                path.compare(0, lowerPrefix.size(), lowerPrefix) == 0 &&
-                (path.size() == lowerPrefix.size() || path[lowerPrefix.size()] == '/')) {
+            if (path == lowerPrefix || path.compare(0, below.size(), below) == 0) {
                 matches.push_back(idx);
             }
         });
@@ -125,7 +126,6 @@ std::vector<uint32_t> SearchEngine::pathRecordsUnder(const std::string& lowerPre
         // lowerFullPath is the directory joined as "dir/" plus the name. A path
         // below the prefix therefore has a joined directory starting with
         // "prefix/"; only a record equal to the prefix sits in a shallower one.
-        const std::string below = lowerPrefix + '/';
         const auto lower = pathPool_.lower();
         const auto keys = pathKeys();
         auto mapped = [&](uint32_t idx) {
