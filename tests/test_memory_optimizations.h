@@ -177,7 +177,8 @@ static void runMemoryOptimizationTests() {
 
     {
         // Prefix removal must match the full-path rule exactly: the lowercase
-        // path equals the prefix or continues with '/' after it.
+        // path equals the prefix or continues with '/' after it. The root "/"
+        // covers every absolute path.
         const std::vector<std::string> dirs{"/", "/a", "/A/Bc", "/a/bc", "/a/bcd", "/a/bc/d", "/a/BC/d/e",
                                             "/t/", "/t", "/t//x", "/u/v", "/u/vw/x", "/Deep/One/Two/Three"};
         auto lowerAscii = [](std::string s) { for (char& c : s) c = char(std::tolower((unsigned char)c)); return s; };
@@ -202,7 +203,7 @@ static void runMemoryOptimizationTests() {
                 const auto full = SearchEngine::makeFullPath(r.path, r.name);
                 if (engine.indexForPath(full) != i) continue;
                 const auto path = lowerAscii(full);
-                if (path.compare(0, p.size(), p) == 0 && (path.size() == p.size() || path[p.size()] == '/'))
+                if (path.compare(0, p.size(), p) == 0 && (p == "/" || path.size() == p.size() || path[p.size()] == '/'))
                     out.push_back(i);
             }
             return out;
