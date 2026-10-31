@@ -163,6 +163,8 @@ struct HighlightedSearchField: NSViewRepresentable {
     var ghostSuggestion: String?
     var isFocused: FocusState<Bool>.Binding
     var onTab: (() -> Bool)?
+    /// ↓ in the field; return true to consume it (e.g. to move focus to the results).
+    var onDownArrow: (() -> Bool)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -179,7 +181,7 @@ struct HighlightedSearchField: NSViewRepresentable {
         let textView = HighlightedNSTextView()
         textView.isRichText = false
         textView.allowsUndo = true
-        textView.font = .systemFont(ofSize: 26)
+        textView.font = .systemFont(ofSize: 18)
         textView.textColor = .labelColor
         textView.backgroundColor = .clear
         textView.drawsBackground = false
@@ -194,12 +196,17 @@ struct HighlightedSearchField: NSViewRepresentable {
         textView.isSelectable = true
         textView.delegate = context.coordinator
         textView.setAccessibilityIdentifier("searchField")
+        textView.setAccessibilityLabel("Search files and folders")
+        textView.textContainerInset = NSSize(width: 0, height: 2)
+        textView.textContainer?.lineFragmentPadding = 0
 
         // Single-line behavior: disable Enter/Return
         textView.isFieldEditor = true
 
         // Tab key handling
         textView.onTabKey = context.coordinator.handleTab
+        textView.onDownArrowKey = context.coordinator.handleDownArrow
+        textView.onFocusChange = context.coordinator.handleFocusChange
 
         // Placeholder
         textView.placeholderString = placeholder
@@ -267,11 +274,24 @@ struct HighlightedSearchField: NSViewRepresentable {
             return parent.onTab?() ?? false
         }
 
+        func handleDownArrow() -> Bool {
+            return parent.onDownArrow?() ?? false
+        }
+
+        /// Keeps the focus binding false once another view (e.g. the result list) takes
+        /// focus, so `updateNSView` doesn't pull first responder back into the field.
+        func handleFocusChange(_ focused: Bool) {
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.parent.isFocused.wrappedValue != focused else { return }
+                self.parent.isFocused.wrappedValue = focused
+            }
+        }
+
         func applyHighlighting(_ textView: NSTextView) {
             guard let textStorage = textView.textStorage else { return }
             let fullRange = NSRange(location: 0, length: textStorage.length)
             let text = textStorage.string
-            let font = NSFont.systemFont(ofSize: 26)
+            let font = NSFont.systemFont(ofSize: 18)
 
             // Reset to default style
             textStorage.beginEditing()
@@ -311,6 +331,8 @@ struct HighlightedSearchField: NSViewRepresentable {
 
 class HighlightedNSTextView: NSTextView {
     var onTabKey: (() -> Bool)?
+    var onDownArrowKey: (() -> Bool)?
+    var onFocusChange: ((Bool) -> Void)?
     var placeholderString: String = ""
     var ghostSuggestion: String? {
         didSet { needsDisplay = true }
@@ -323,14 +345,31 @@ class HighlightedNSTextView: NSTextView {
                 return // Tab was consumed by ghost suggestion
             }
         }
+        if event.keyCode == 125, // Down arrow
+           event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+           let handler = onDownArrowKey, handler() {
+            return
+        }
         super.keyDown(with: event)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let accepted = super.becomeFirstResponder()
+        if accepted { onFocusChange?(true) }
+        return accepted
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let accepted = super.resignFirstResponder()
+        if accepted { onFocusChange?(false) }
+        return accepted
     }
 
     override func draw(_ dirtyRect: NSRect) {
         // Draw ghost suggestion behind the real text (before super.draw paints the typed text)
         if let ghost = ghostSuggestion, !ghost.isEmpty, !string.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: font ?? NSFont.systemFont(ofSize: 26),
+                .font: font ?? NSFont.systemFont(ofSize: 18),
                 .foregroundColor: NSColor.secondaryLabelColor.withAlphaComponent(0.4),
             ]
             let ghostStr = NSAttributedString(string: ghost, attributes: attrs)
@@ -347,7 +386,7 @@ class HighlightedNSTextView: NSTextView {
         // Draw placeholder when empty
         if string.isEmpty && !placeholderString.isEmpty {
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: font ?? NSFont.systemFont(ofSize: 26),
+                .font: font ?? NSFont.systemFont(ofSize: 18),
                 .foregroundColor: NSColor.placeholderTextColor,
             ]
             let placeholder = NSAttributedString(string: placeholderString, attributes: attrs)

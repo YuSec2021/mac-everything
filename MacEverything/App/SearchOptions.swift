@@ -56,30 +56,35 @@ struct SearchOptionBadges: View {
         if options.hasActiveOptions {
             HStack(spacing: 4) {
                 if options.isRegex {
-                    badge(".*", color: .purple) { options.isRegex.toggle() }
+                    badge("Regex", help: "Disable regular expression matching") { options.isRegex.toggle() }
                 }
                 if options.isCaseSensitive {
-                    badge("Aa", color: .orange) { options.isCaseSensitive.toggle() }
+                    badge("Case sensitive", help: "Disable case sensitive matching") { options.isCaseSensitive.toggle() }
                 }
                 if options.isWholeWord {
-                    badge("W", color: .blue) { options.isWholeWord.toggle() }
+                    badge("Whole word", help: "Disable whole word matching") { options.isWholeWord.toggle() }
                 }
                 if options.isMatchFilename {
-                    badge("FN", color: .green) { options.isMatchFilename.toggle() }
+                    badge("Filename", help: "Disable whole filename matching") { options.isMatchFilename.toggle() }
                 }
             }
         }
     }
 
-    private func badge(_ text: String, color: Color, action: @escaping () -> Void) -> some View {
+    private func badge(_ text: String, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(text)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
-                .foregroundColor(.white)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(RoundedRectangle(cornerRadius: 4).fill(color))
+            HStack(spacing: 4) {
+                Text(text)
+                Image(systemName: "xmark").font(.system(size: 8, weight: .semibold))
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(Color.accentColor)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.accentColor.opacity(0.1), in: Capsule())
         }
         .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }

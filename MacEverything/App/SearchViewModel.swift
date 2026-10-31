@@ -22,6 +22,7 @@ struct ContentFileItem: Identifiable {
 
 @MainActor
 class SearchViewModel: ObservableObject {
+    static let shared = SearchViewModel()
     @Published var searchText: String = ""
     @Published var displayItems: [FileItem] = []
     @Published var totalMatches: Int = 0
@@ -32,7 +33,6 @@ class SearchViewModel: ObservableObject {
     @Published var isMonitoring: Bool = false
     @Published var scannedCount: UInt64 = 0
     var isLoadingMore: Bool = false
-    @Published var showingRecent: Bool = false
     @Published var isContentSearch: Bool = false
     @Published var contentResults: [ContentFileItem] = []
     @Published var isContentIndexing: Bool = false
@@ -40,23 +40,31 @@ class SearchViewModel: ObservableObject {
     @Published var contentIndexedCount: UInt32 = 0
     @Published var isSyncing: Bool = false
     @Published var ghostSuggestion: String? = nil
+    /// `id` of the selected row in whichever result list is showing (file or content).
+    @Published var selectedResultID: String?
 
     /// Structured highlight hints extracted from the C++ query AST.
     /// Replaces the old keyword-based approach with field-aware, mode-aware hints.
     var highlightHints: [HighlightHint] {
         let query = searchOptions.buildQuery(searchText)
         guard !query.isEmpty else { return [] }
-        return bridge.parseHighlightHints(query).map { HighlightHint(from: $0) }
+        if query != cachedHighlightQuery {
+            cachedHighlightQuery = query
+            cachedHighlightHints = bridge.parseHighlightHints(query).map { HighlightHint(from: $0) }
+        }
+        return cachedHighlightHints
     }
+
+    private var cachedHighlightQuery: String?
+    private var cachedHighlightHints: [HighlightHint] = []
 
     private let bridge = MacSearchBridge.shared()
     private let historyStore = SearchHistoryStore()
     private let searchOptions = SearchOptions.shared
     private var searchTask: Task<Void, Never>?
-    private var recentTask: Task<Void, Never>?
     private var settledTask: Task<Void, Never>?
     private var optionsSink: AnyCancellable?
-    private var cachedResults: [MEFileResult] = []
+    private var resultSnapshot: MEQuerySnapshot?
     private var loadedCount: Int = 0
     private var searchGeneration: UInt64 = 0
     private static let guiSessionId: UInt64 = 1
@@ -163,8 +171,6 @@ class SearchViewModel: ObservableObject {
 
                 if !self.searchText.isEmpty {
                     self.performSearch(self.searchText)
-                } else {
-                    self.loadRecentFiles()
                 }
             }
         }
@@ -173,9 +179,9 @@ class SearchViewModel: ObservableObject {
     func rebuildIndex() {
         guard !isScanning else { return }
         searchTask?.cancel()
-        recentTask?.cancel()
         indexChangeTask?.cancel()
         searchGeneration &+= 1
+        resultSnapshot = nil
         scanComplete = false
         displayItems = []
         totalMatches = 0
@@ -195,7 +201,6 @@ class SearchViewModel: ObservableObject {
 
     func onSearchTextChanged() {
         searchTask?.cancel()
-        recentTask?.cancel()
         searchGeneration &+= 1
         isLoadingMore = false
         let text = searchText
@@ -203,36 +208,25 @@ class SearchViewModel: ObservableObject {
         if text.isEmpty {
             totalMatches = 0
             queryTimeMs = 0
-            cachedResults = []
+            resultSnapshot = nil
             loadedCount = 0
             isContentSearch = false
             contentResults = []
             contentKeyword = "" // H-9: reset cached keyword
             ghostSuggestion = nil
+            selectedResultID = nil
             settledTask?.cancel()
             // Cancel any in-flight queries for this GUI session
             bridge.cancelSession(Self.guiSessionId)
-            if scanComplete {
-                // Slight delay so the stale query's dispatch_apply threads
-                // detect the generation change and exit before we compete for the thread pool
-                recentTask = Task { @MainActor [weak self] in
-                    try? await Task.sleep(nanoseconds: 20_000_000) // 20ms
-                    guard !Task.isCancelled, let self else { return }
-                    self.loadRecentFiles()
-                }
-            } else {
-                displayItems = []
-                showingRecent = false
-            }
+            displayItems = []
             return
         }
-        showingRecent = false
 
         let lowerText = text.lowercased()
         if lowerText.hasPrefix("infile:") {
             isContentSearch = true
             displayItems = []
-            cachedResults = []
+            resultSnapshot = nil
             loadedCount = 0
 
             let keyword = String(text.dropFirst(7))
@@ -268,6 +262,8 @@ class SearchViewModel: ObservableObject {
     }
 
     private func performSearch(_ keyword: String) {
+        searchGeneration &+= 1
+        isLoadingMore = false
         let bridge = self.bridge
         let maxResults = Self.maxResults
         let pageSize = Self.pageSize
@@ -275,29 +271,28 @@ class SearchViewModel: ObservableObject {
         let query = searchOptions.buildQuery(keyword)
         Task.detached { [weak self] in
             let start = CFAbsoluteTimeGetCurrent()
-            // P-4: Use batch method — single engine lock, no NSNumber boxing
-            let results = bridge.queryResults(query, maxResults: maxResults, sessionId: Self.guiSessionId)
-            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
-            let totalCount = results.count
-
-            let firstPageCount = min(totalCount, pageSize)
-            var items: [FileItem] = []
-            items.reserveCapacity(firstPageCount)
-            for i in 0..<firstPageCount {
-                let r = results[i]
-                items.append(FileItem(
-                    id: "\(r.path)/\(r.name)", index: 0,
-                    name: r.name, path: r.path,
-                    type: r.type, size: r.size, modTime: r.modTime
-                ))
+            var snapshot: MEQuerySnapshot?
+            var page: [MEFileResult]?
+            for _ in 0..<2 {
+                guard let candidate = bridge.querySnapshot(query, maxResults: maxResults, sessionId: Self.guiSessionId),
+                      let firstPage = candidate.results(atOffset: 0, count: pageSize) else { continue }
+                snapshot = candidate
+                page = firstPage
+                break
             }
-
+            guard let snapshot, let page else { return }
+            let items = page.map { r in
+                FileItem(id: "\(r.path)/\(r.name)", index: 0, name: r.name, path: r.path,
+                         type: r.type, size: r.size, modTime: r.modTime)
+            }
+            let elapsed = (CFAbsoluteTimeGetCurrent() - start) * 1000
             await MainActor.run { [weak self] in
                 guard let self, self.searchGeneration == gen else { return }
-                self.cachedResults = results
-                self.loadedCount = firstPageCount
+                self.resultSnapshot = snapshot
+                self.loadedCount = min(snapshot.count, pageSize)
                 self.displayItems = items
-                self.totalMatches = totalCount
+                self.dropStaleSelection()
+                self.totalMatches = snapshot.count
                 self.queryTimeMs = elapsed
             }
         }
@@ -327,6 +322,7 @@ class SearchViewModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self, self.searchGeneration == gen else { return }
                 self.contentResults = items
+                self.dropStaleSelection()
                 self.totalMatches = items.count
                 self.queryTimeMs = elapsed
             }
@@ -334,62 +330,26 @@ class SearchViewModel: ObservableObject {
     }
 
     func loadMore() {
-        guard !isLoadingMore else { return }
-        guard loadedCount < cachedResults.count else { return }
-
+        guard !isLoadingMore, let snapshot = resultSnapshot, loadedCount < snapshot.count else { return }
         isLoadingMore = true
-        let results = cachedResults
         let currentLoaded = loadedCount
         let pageSize = Self.pageSize
         let gen = searchGeneration
-
-        // P-4: Results are already fetched — just slice the next page, no bridge calls needed
         Task.detached { [weak self] in
-            let nextEnd = min(currentLoaded + pageSize, results.count)
-            var newItems: [FileItem] = []
-            newItems.reserveCapacity(nextEnd - currentLoaded)
-            for i in currentLoaded..<nextEnd {
-                let r = results[i]
-                newItems.append(FileItem(
-                    id: "\(r.path)/\(r.name)", index: 0,
-                    name: r.name, path: r.path,
-                    type: r.type, size: r.size, modTime: r.modTime
-                ))
+            let page = snapshot.results(atOffset: currentLoaded, count: pageSize)
+            let items = page?.map { r in
+                FileItem(id: "\(r.path)/\(r.name)", index: 0, name: r.name, path: r.path,
+                         type: r.type, size: r.size, modTime: r.modTime)
             }
-
             await MainActor.run { [weak self] in
-                guard let self, self.searchGeneration == gen else {
-                    self?.isLoadingMore = false
+                guard let self, self.searchGeneration == gen, self.resultSnapshot === snapshot else { return }
+                self.isLoadingMore = false
+                guard let items else {
+                    self.performSearch(self.searchText)
                     return
                 }
-                self.displayItems.append(contentsOf: newItems)
-                self.loadedCount = nextEnd
-                self.isLoadingMore = false
-            }
-        }
-    }
-
-    private func loadRecentFiles() {
-        recentTask?.cancel()
-        let bridge = self.bridge
-        let gen = searchGeneration
-        recentTask = Task.detached { [weak self] in
-            // P-4: Use batch method — single engine lock, no NSNumber boxing
-            let results = bridge.recentResults(100)
-            var items: [FileItem] = []
-            items.reserveCapacity(results.count)
-            for r in results {
-                guard !Task.isCancelled else { return }
-                items.append(FileItem(
-                    id: "\(r.path)/\(r.name)", index: 0,
-                    name: r.name, path: r.path,
-                    type: r.type, size: r.size, modTime: r.modTime
-                ))
-            }
-            await MainActor.run { [weak self] in
-                guard let self, self.searchGeneration == gen else { return }
-                self.displayItems = items
-                self.showingRecent = true
+                self.displayItems.append(contentsOf: items)
+                self.loadedCount = min(currentLoaded + pageSize, snapshot.count)
             }
         }
     }
@@ -416,9 +376,10 @@ class SearchViewModel: ObservableObject {
     }
 
     private func scheduleCooldown() {
+        indexChangeTask?.cancel()
         indexChangeTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: Self.indexChangeThrottleNs)
-            guard let self else { return }
+            guard !Task.isCancelled, let self else { return }
             self.indexChangeTask = nil
             if self.refreshThrottle.cooldownExpired() {
                 self.performIndexRefresh()
@@ -441,13 +402,44 @@ class SearchViewModel: ObservableObject {
             performSearch(searchText)
         } else if isContentSearch && !contentKeyword.isEmpty {
             performContentSearch(contentKeyword)
-        } else if showingRecent {
-            loadRecentFiles()
         }
     }
 
+    // MARK: - Selection
+
+    private var selectableIDs: [String] {
+        isContentSearch ? contentResults.map(\.id) : displayItems.map(\.id)
+    }
+
+    var firstResultID: String? {
+        isContentSearch ? contentResults.first?.id : displayItems.first?.id
+    }
+
+    var selectedResultURL: URL? {
+        guard let id = selectedResultID else { return nil }
+        if isContentSearch {
+            return contentResults.first { $0.id == id }.map { URL(fileURLWithPath: $0.filePath) }
+        }
+        return displayItems.first { $0.id == id }.map { URL(fileURLWithPath: $0.path + "/" + $0.name) }
+    }
+
+    func moveSelection(by delta: Int) {
+        let ids = selectableIDs
+        guard !ids.isEmpty else { return }
+        guard let current = selectedResultID, let index = ids.firstIndex(of: current) else {
+            selectedResultID = ids.first
+            return
+        }
+        selectedResultID = ids[min(max(index + delta, 0), ids.count - 1)]
+        if !isContentSearch, index + delta >= ids.count - 1 { loadMore() }
+    }
+
+    private func dropStaleSelection() {
+        if let id = selectedResultID, !selectableIDs.contains(id) { selectedResultID = nil }
+    }
+
     var hasMoreResults: Bool {
-        loadedCount < cachedResults.count
+        loadedCount < (resultSnapshot?.count ?? 0)
     }
 
     // H-9: Cached to avoid recomputing lowercased() + hasPrefix on every access

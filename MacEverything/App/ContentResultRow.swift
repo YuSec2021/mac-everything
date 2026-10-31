@@ -7,7 +7,7 @@ struct ContentResultRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 12) {
             fileIcon(for: item.filePath)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -16,13 +16,13 @@ struct ContentResultRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(item.fileName)
-                        .font(.title3)
+                        .font(.system(size: 13))
                         .fontWeight(.medium)
                         .foregroundColor(.primary)
                         .lineLimit(1)
 
                     Text(directoryPath(item.filePath))
-                        .font(.subheadline)
+                        .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -34,12 +34,14 @@ struct ContentResultRow: View {
 
             Spacer()
         }
-        .padding(.vertical, 5)
-        .padding(.horizontal, 6)
+        .frame(minHeight: 48)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 14)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.accentColor.opacity(0.12) : Color.clear)
+                .fill(isHovered ? Color.primary.opacity(0.045) : Color.clear)
         )
+        .help(item.filePath)
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
@@ -53,18 +55,19 @@ struct ContentResultRow: View {
         .onDrag {
             return NSItemProvider(object: NSURL(fileURLWithPath: item.filePath))
         }
-        .onTapGesture(count: 2) {
+        // Simultaneous gestures leave the click to the List too, so it can select the row.
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
             if NSEvent.modifierFlags.contains(.command) {
                 revealInFinder()
             } else {
                 openFile()
             }
-        }
-        .onTapGesture(count: 1) {
+        })
+        .simultaneousGesture(TapGesture(count: 1).onEnded {
             if NSEvent.modifierFlags.contains(.command) {
                 revealInFinder()
             }
-        }
+        })
         .accessibilityIdentifier("contentResultRow")
     }
 

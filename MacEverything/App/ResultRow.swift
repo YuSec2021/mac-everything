@@ -61,35 +61,38 @@ struct ResultRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 12) {
             fileIcon(for: item)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 24, height: 24)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 let highlighted = highlightCrossMatches(
                     path: item.path, name: item.name, hints: hints,
-                    nameFont: .title3, nameColor: .primary,
-                    pathFont: .subheadline, pathColor: .secondary)
-                highlighted.nameText.lineLimit(1)
-                highlighted.pathText.lineLimit(1)
+                    nameFont: .system(size: 13, weight: .medium), nameColor: .primary,
+                    pathFont: .system(size: 11), pathColor: .secondary)
+                highlighted.nameText.lineLimit(1).truncationMode(.middle)
+                highlighted.pathText.lineLimit(1).truncationMode(.middle)
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .layoutPriority(1)
 
             if item.type == 1 && item.size > 0 {
                 Text(formatSize(item.size))
-                    .font(.subheadline)
+                    .font(.system(size: 11).monospacedDigit())
+                    .frame(width: 72, alignment: .trailing)
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 4)
-        .padding(.horizontal, 6)
+        .frame(minHeight: 36)
+        .padding(.vertical, 3)
+        .padding(.horizontal, 14)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.accentColor.opacity(0.12) : Color.clear)
+                .fill(isHovered ? Color.primary.opacity(0.045) : Color.clear)
         )
+        .help(item.path + "/" + item.name)
         .contentShape(Rectangle())
         .onHover { hovering in
             isHovered = hovering
@@ -104,18 +107,19 @@ struct ResultRow: View {
             let fullPath = item.path + "/" + item.name
             return NSItemProvider(object: NSURL(fileURLWithPath: fullPath))
         }
-        .onTapGesture(count: 2) {
+        // Simultaneous gestures leave the click to the List too, so it can select the row.
+        .simultaneousGesture(TapGesture(count: 2).onEnded {
             if NSEvent.modifierFlags.contains(.command) {
                 revealInFinder(item)
             } else {
                 openFile(item)
             }
-        }
-        .onTapGesture(count: 1) {
+        })
+        .simultaneousGesture(TapGesture(count: 1).onEnded {
             if NSEvent.modifierFlags.contains(.command) {
                 revealInFinder(item)
             }
-        }
+        })
         .accessibilityIdentifier("resultRow")
     }
 

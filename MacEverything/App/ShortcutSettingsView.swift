@@ -2,36 +2,36 @@ import SwiftUI
 import Carbon.HIToolbox
 
 struct ShortcutSettingsView: View {
+    private enum Message {
+        case info(String)
+        case warning(String)
+        case error(String)
+    }
+
     @State private var isRecording = false
-    @State private var currentShortcut: String = ""
-    @State private var modifiers: UInt32 = UInt32(optionKey)
-    @State private var keyCode: UInt32 = UInt32(kVK_Space)
+    @State private var hotkey: Hotkey? = HotkeySettings.hotkey
+    @State private var message: Message?
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack(spacing: 18) {
             Text("Global Hotkey Settings")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Click the button below and press your desired key combination to set the global hotkey for showing/hiding MacEverything.")
+            Text("Record a key combination to open or close the menu bar search panel from any app.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: 360)
 
-            VStack(spacing: 12) {
-                Text("Current Shortcut")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                Button(action: {
-                    isRecording.toggle()
-                }) {
-                    Text(isRecording ? "Press a key combination..." : currentShortcut)
+            HStack(spacing: 8) {
+                Button(action: toggleRecording) {
+                    Text(recorderTitle)
                         .font(.title3)
                         .fontWeight(.medium)
-                        .foregroundColor(isRecording ? .accentColor : .primary)
-                        .frame(minWidth: 200, minHeight: 40)
+                        .foregroundColor(isRecording ? .accentColor : (hotkey == nil ? .secondary : .primary))
+                        .frame(minWidth: 220, minHeight: 40)
                         .background(
                             RoundedRectangle(cornerRadius: 8)
                                 .stroke(isRecording ? Color.accentColor : Color.gray.opacity(0.4), lineWidth: isRecording ? 2 : 1)
@@ -42,30 +42,45 @@ struct ShortcutSettingsView: View {
                         )
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("hotkeyRecorder")
+
+                Button {
+                    finishRecording()
+                    apply(nil)
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .disabled(hotkey == nil && !isRecording)
+                .help("Clear shortcut")
+                .accessibilityLabel("Clear shortcut")
             }
 
             if isRecording {
                 ShortcutRecorderView(
-                    onKeyCombo: { newKeyCode, newModifiers in
-                        keyCode = newKeyCode
-                        modifiers = newModifiers
-                        currentShortcut = describeShortcut(keyCode: newKeyCode, modifiers: newModifiers)
-                        isRecording = false
-                        saveAndApply()
+                    onKeyCombo: { recorded in
+                        finishRecording()
+                        record(recorded)
                     },
-                    onCancel: {
-                        isRecording = false
-                    }
+                    onClear: {
+                        finishRecording()
+                        apply(nil)
+                    },
+                    onCancel: finishRecording
                 )
                 .frame(width: 0, height: 0)
             }
 
+            messageView
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: 380, minHeight: 34, alignment: .top)
+
             HStack(spacing: 16) {
                 Button("Reset to Default") {
-                    keyCode = UInt32(kVK_Space)
-                    modifiers = UInt32(optionKey)
-                    currentShortcut = describeShortcut(keyCode: keyCode, modifiers: modifiers)
-                    saveAndApply()
+                    finishRecording()
+                    record(.defaultHotkey)
                 }
 
                 Button("Close") {
@@ -75,25 +90,83 @@ struct ShortcutSettingsView: View {
             }
         }
         .padding(30)
-        .frame(width: 440, height: 280)
+        .frame(width: 460)
         .onAppear {
-            loadSaved()
+            hotkey = HotkeySettings.hotkey
+            if let error = HotkeyManager.shared.launchRegistrationError {
+                message = .error("\(hotkey?.displayString ?? "The shortcut") isn't active: \(error.message) Record a different one.")
+            } else if HotkeyManager.shared.isSharedWithAnotherApp, let hotkey {
+                message = .warning(sharedWarning(hotkey))
+            }
+        }
+        .onDisappear(perform: finishRecording)
+    }
+
+    private var recorderTitle: String {
+        if isRecording { return "Type shortcut…" }
+        return hotkey?.displayString ?? "Click to record"
+    }
+
+    @ViewBuilder
+    private var messageView: some View {
+        switch message {
+        case .info(let text):
+            Label(text, systemImage: "checkmark.circle").foregroundStyle(.secondary)
+        case .warning(let text):
+            Label(text, systemImage: "exclamationmark.triangle").foregroundStyle(.orange)
+        case .error(let text):
+            Label(text, systemImage: "xmark.octagon").foregroundStyle(.red)
+        case nil:
+            Text(isRecording ? "Press Esc to cancel, Delete to clear." : " ")
+                .foregroundStyle(.secondary)
         }
     }
 
-    private func loadSaved() {
-        let defaults = UserDefaults.standard
-        if defaults.object(forKey: "hotkeyKeyCode") != nil {
-            keyCode = UInt32(defaults.integer(forKey: "hotkeyKeyCode"))
-            modifiers = UInt32(defaults.integer(forKey: "hotkeyModifiers"))
+    private func toggleRecording() {
+        if isRecording {
+            finishRecording()
+        } else {
+            message = nil
+            HotkeyManager.shared.suspend()
+            isRecording = true
         }
-        currentShortcut = describeShortcut(keyCode: keyCode, modifiers: modifiers)
     }
 
-    private func saveAndApply() {
-        UserDefaults.standard.set(Int(keyCode), forKey: "hotkeyKeyCode")
-        UserDefaults.standard.set(Int(modifiers), forKey: "hotkeyModifiers")
-        NotificationCenter.default.post(name: .hotkeyChanged, object: nil)
+    private func finishRecording() {
+        guard isRecording else { return }
+        isRecording = false
+        HotkeyManager.shared.resume()
+    }
+
+    private func record(_ candidate: Hotkey) {
+        let conflict = HotkeyConflictChecker.check(candidate)
+        if let conflict, conflict.severity == .blocking {
+            message = .error(conflict.message)
+            return
+        }
+        guard apply(candidate) else { return }
+        if HotkeyManager.shared.isSharedWithAnotherApp {
+            message = .warning(sharedWarning(candidate))
+        } else if let conflict {
+            message = .warning(conflict.message)
+        }
+    }
+
+    private func sharedWarning(_ hotkey: Hotkey) -> String {
+        "Another running app has also claimed \(hotkey.displayString), so pressing it may open that app instead. Choose a different shortcut if MacEverything doesn't appear."
+    }
+
+    @discardableResult
+    private func apply(_ candidate: Hotkey?) -> Bool {
+        switch HotkeyManager.shared.apply(candidate) {
+        case .success:
+            hotkey = candidate
+            message = .info(candidate.map { "\($0.displayString) is now active." } ?? "Global hotkey turned off.")
+            return true
+        case .failure(let error):
+            message = .error("Couldn't use \(candidate?.displayString ?? "this shortcut"): \(error.message)")
+            return false
+        }
     }
 }
 
@@ -105,81 +178,50 @@ func describeShortcut(keyCode: UInt32, modifiers: UInt32) -> String {
     if modifiers & UInt32(shiftKey) != 0 { parts.append("⇧") }
     if modifiers & UInt32(cmdKey) != 0 { parts.append("⌘") }
 
-    let keyName: String
-    switch Int(keyCode) {
-    case kVK_Space: keyName = "Space"
-    case kVK_Return: keyName = "Return"
-    case kVK_Tab: keyName = "Tab"
-    case kVK_Escape: keyName = "Esc"
-    case kVK_Delete: keyName = "Delete"
-    case kVK_ForwardDelete: keyName = "Fwd Delete"
-    case kVK_UpArrow: keyName = "↑"
-    case kVK_DownArrow: keyName = "↓"
-    case kVK_LeftArrow: keyName = "←"
-    case kVK_RightArrow: keyName = "→"
-    case kVK_ANSI_A: keyName = "A"
-    case kVK_ANSI_B: keyName = "B"
-    case kVK_ANSI_C: keyName = "C"
-    case kVK_ANSI_D: keyName = "D"
-    case kVK_ANSI_E: keyName = "E"
-    case kVK_ANSI_F: keyName = "F"
-    case kVK_ANSI_G: keyName = "G"
-    case kVK_ANSI_H: keyName = "H"
-    case kVK_ANSI_I: keyName = "I"
-    case kVK_ANSI_J: keyName = "J"
-    case kVK_ANSI_K: keyName = "K"
-    case kVK_ANSI_L: keyName = "L"
-    case kVK_ANSI_M: keyName = "M"
-    case kVK_ANSI_N: keyName = "N"
-    case kVK_ANSI_O: keyName = "O"
-    case kVK_ANSI_P: keyName = "P"
-    case kVK_ANSI_Q: keyName = "Q"
-    case kVK_ANSI_R: keyName = "R"
-    case kVK_ANSI_S: keyName = "S"
-    case kVK_ANSI_T: keyName = "T"
-    case kVK_ANSI_U: keyName = "U"
-    case kVK_ANSI_V: keyName = "V"
-    case kVK_ANSI_W: keyName = "W"
-    case kVK_ANSI_X: keyName = "X"
-    case kVK_ANSI_Y: keyName = "Y"
-    case kVK_ANSI_Z: keyName = "Z"
-    case kVK_ANSI_0: keyName = "0"
-    case kVK_ANSI_1: keyName = "1"
-    case kVK_ANSI_2: keyName = "2"
-    case kVK_ANSI_3: keyName = "3"
-    case kVK_ANSI_4: keyName = "4"
-    case kVK_ANSI_5: keyName = "5"
-    case kVK_ANSI_6: keyName = "6"
-    case kVK_ANSI_7: keyName = "7"
-    case kVK_ANSI_8: keyName = "8"
-    case kVK_ANSI_9: keyName = "9"
-    case kVK_F1: keyName = "F1"
-    case kVK_F2: keyName = "F2"
-    case kVK_F3: keyName = "F3"
-    case kVK_F4: keyName = "F4"
-    case kVK_F5: keyName = "F5"
-    case kVK_F6: keyName = "F6"
-    case kVK_F7: keyName = "F7"
-    case kVK_F8: keyName = "F8"
-    case kVK_F9: keyName = "F9"
-    case kVK_F10: keyName = "F10"
-    case kVK_F11: keyName = "F11"
-    case kVK_F12: keyName = "F12"
-    default: keyName = "Key(\(keyCode))"
-    }
-
-    parts.append(keyName)
+    parts.append(specialKeyNames[Int(keyCode)] ?? printableKeyName(keyCode) ?? "Key(\(keyCode))")
     return parts.joined(separator: "")
+}
+
+private let specialKeyNames: [Int: String] = [
+    kVK_Space: "Space", kVK_Return: "Return", kVK_ANSI_KeypadEnter: "Enter", kVK_Tab: "Tab",
+    kVK_Escape: "Esc", kVK_Delete: "Delete", kVK_ForwardDelete: "Fwd Delete",
+    kVK_UpArrow: "↑", kVK_DownArrow: "↓", kVK_LeftArrow: "←", kVK_RightArrow: "→",
+    kVK_Home: "Home", kVK_End: "End", kVK_PageUp: "Page Up", kVK_PageDown: "Page Down",
+    kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4", kVK_F5: "F5",
+    kVK_F6: "F6", kVK_F7: "F7", kVK_F8: "F8", kVK_F9: "F9", kVK_F10: "F10",
+    kVK_F11: "F11", kVK_F12: "F12", kVK_F13: "F13", kVK_F14: "F14", kVK_F15: "F15",
+    kVK_F16: "F16", kVK_F17: "F17", kVK_F18: "F18", kVK_F19: "F19", kVK_F20: "F20",
+]
+
+/// The character a key produces on the current keyboard layout (e.g. "A", "/", "Ö"),
+/// so shortcuts display the way they are printed on the user's keyboard.
+func printableKeyName(_ keyCode: UInt32) -> String? {
+    guard let source = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
+          let layoutPtr = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+    let layoutData = Unmanaged<CFData>.fromOpaque(layoutPtr).takeUnretainedValue() as Data
+    var deadKeyState: UInt32 = 0
+    var chars = [UniChar](repeating: 0, count: 4)
+    var length = 0
+    let status = layoutData.withUnsafeBytes { raw -> OSStatus in
+        guard let layout = raw.bindMemory(to: UCKeyboardLayout.self).baseAddress else { return OSStatus(paramErr) }
+        return UCKeyTranslate(layout, UInt16(keyCode), UInt16(kUCKeyActionDisplay), 0, UInt32(LMGetKbdType()),
+                              OptionBits(kUCKeyTranslateNoDeadKeysBit), &deadKeyState, chars.count, &length, &chars)
+    }
+    guard status == noErr, length > 0 else { return nil }
+    let name = String(utf16CodeUnits: chars, count: length).trimmingCharacters(in: .whitespacesAndNewlines.union(.controlCharacters))
+    return name.isEmpty ? nil : name.uppercased()
 }
 
 // NSView-based key recorder to capture raw key events
 struct ShortcutRecorderView: NSViewRepresentable {
-    var onKeyCombo: (UInt32, UInt32) -> Void
+    var onKeyCombo: (Hotkey) -> Void
+    var onClear: () -> Void
     var onCancel: () -> Void
 
     func makeNSView(context: Context) -> ShortcutRecorderNSView {
         let view = ShortcutRecorderNSView()
         view.onKeyCombo = onKeyCombo
+        view.onClear = onClear
         view.onCancel = onCancel
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
@@ -189,45 +231,44 @@ struct ShortcutRecorderView: NSViewRepresentable {
 
     func updateNSView(_ nsView: ShortcutRecorderNSView, context: Context) {
         nsView.onKeyCombo = onKeyCombo
+        nsView.onClear = onClear
         nsView.onCancel = onCancel
     }
 }
 
 class ShortcutRecorderNSView: NSView {
-    var onKeyCombo: ((UInt32, UInt32) -> Void)?
+    var onKeyCombo: ((Hotkey) -> Void)?
+    var onClear: (() -> Void)?
     var onCancel: (() -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
 
+    // ⌘-combinations arrive here before the menu; capture them so recording ⌘Q doesn't quit.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window?.firstResponder === self, event.type == .keyDown else { return false }
+        keyDown(with: event)
+        return true
+    }
+
     override func keyDown(with event: NSEvent) {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-
-        // Escape without modifiers cancels
-        if event.keyCode == UInt16(kVK_Escape) && flags.isEmpty {
-            onCancel?()
-            return
+        let hotkey = Hotkey(event: event)
+        if hotkey.modifiers == 0 {
+            switch Int(event.keyCode) {
+            case kVK_Escape: onCancel?(); return
+            case kVK_Delete, kVK_ForwardDelete: onClear?(); return
+            default: break
+            }
         }
-
-        // Require at least one modifier
-        var carbonModifiers: UInt32 = 0
-        if flags.contains(.command) { carbonModifiers |= UInt32(cmdKey) }
-        if flags.contains(.option) { carbonModifiers |= UInt32(optionKey) }
-        if flags.contains(.control) { carbonModifiers |= UInt32(controlKey) }
-        if flags.contains(.shift) { carbonModifiers |= UInt32(shiftKey) }
-
-        if carbonModifiers == 0 {
-            NSSound.beep()
-            return
-        }
-
-        onKeyCombo?(UInt32(event.keyCode), carbonModifiers)
+        // Validation (modifier rules, conflicts) is reported by the settings view.
+        onKeyCombo?(hotkey)
     }
 
     override func flagsChanged(with event: NSEvent) {
         // Ignore pure modifier key presses
     }
-}
 
-extension Notification.Name {
-    static let hotkeyChanged = Notification.Name("hotkeyChanged")
+    override func resignFirstResponder() -> Bool {
+        DispatchQueue.main.async { [weak self] in self?.onCancel?() }
+        return true
+    }
 }

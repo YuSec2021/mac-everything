@@ -5,13 +5,19 @@ struct MacEverythingApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @ObservedObject private var searchOptions = SearchOptions.shared
 
+    /// MacEverything lives in the menu bar (LSUIElement), so it has no window scene. The
+    /// Settings scene is only a host for the menu commands below: their key equivalents
+    /// still fire while the search panel or a settings window is key, even though the
+    /// menu bar itself isn't shown. `.appSettings` is replaced, so it never opens.
     var body: some Scene {
-        Window("MacEverything", id: "main") {
-            ContentView()
-        }
-        .windowStyle(.titleBar)
-        .defaultSize(width: 800, height: 600)
+        Settings { EmptyView() }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About MacEverything") {
+                    AboutWindowController.shared.showWindow()
+                }
+            }
+
             CommandMenu("Search") {
                 Toggle("Regex", isOn: $searchOptions.isRegex)
                     .keyboardShortcut("r", modifiers: [.command])
@@ -30,10 +36,8 @@ struct MacEverythingApp: App {
                 .keyboardShortcut("/", modifiers: [.command, .shift])
             }
 
-            CommandGroup(after: .appSettings) {
-                Button("Rebuild Index") {
-                    NotificationCenter.default.post(name: .rebuildIndex, object: nil)
-                }
+            CommandGroup(replacing: .appSettings) {
+                Button("Rebuild Index") { appDelegate.rebuildIndex() }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
 
                 Button("Shortcut Settings...") {
@@ -58,10 +62,6 @@ struct MacEverythingApp: App {
             }
         }
     }
-}
-
-extension Notification.Name {
-    static let rebuildIndex = Notification.Name("rebuildIndex")
 }
 
 class ContentSettingsWindowController {

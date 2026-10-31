@@ -32,7 +32,7 @@ Current version: **1.2 (Build 3)**. Created by **YuSec**.
 
 - **Smaller resident index**: shared directory/name storage, delta-compressed postings, compact path lookup and narrow metadata columns. A fixed snapshot with 6.38 million live records reached about **573 MiB** of ready physical footprint.
 - **Query and mutation improvements**: specialized substring loops, per-thread Top-K, directory candidates and batched posting removal. Deleting 41,562 records on the fixed snapshot dropped from about **1.4 s to 0.25 s**.
-- **Menu bar search and paged results**: the main window and popover share the index and query state; load 100 results initially, then fetch more while scrolling.
+- **Menu bar search and paged results**: all searching happens in the menu bar panel (no main window, no Dock icon); load 100 results initially, then fetch more while scrolling.
 - **New icon, logo and About window**: open **About MacEverything** from the app menu or the menu bar icon's context menu for the author, version, GitHub link and version notes.
 
 Figures come from existing local audits and depend on hardware and workload. See the [memory changelog](docs/changelog/146-resident-memory-optimization.md), [algorithm changelog](docs/changelog/147-query-and-prefix-removal.md) and [full history](docs/changelog/README.md) (Chinese).
@@ -47,7 +47,7 @@ These are local core-engine timings, excluding GUI debounce, bridging and render
 
 ### Always at Your Fingertips
 
-Press **`Option+Space`** to open the menu bar search panel by default. Configure the shortcut and its target in Shortcut Settings. Left-click the menu bar icon to search, or right-click for settings. The panel focuses the input automatically; **Escape** dismisses it, and you can continue the same query in the main window. Launch at login and minimized startup are supported.
+Press **`Option+Space`** to open the menu bar search panel by default. Configure the shortcut in Shortcut Settings; pressing it again closes the panel and returns to the previous app. Left-click the menu bar icon to search, or right-click it (or use the gear in the panel) for Rebuild Index, shortcut and content settings, MCP, Launch at Login, About and Quit. The panel focuses the input automatically; **Escape** dismisses it. The app lives in the menu bar and supports launch at login.
 
 ### Smart Input Experience
 
@@ -316,7 +316,7 @@ mac-everything/
 ├── MacEverything/
 │   ├── Core/              # C++20 queries, scanning, compressed indexes, v6/WAL, HTTP
 │   ├── Bridge/            # Objective-C++ interop and paged result snapshots
-│   ├── App/               # SwiftUI main window, menu bar, shortcuts, About
+│   ├── App/               # SwiftUI menu bar search panel, shortcuts, settings, About
 │   ├── CLI/               # Daemon and MCP stdio server
 │   └── Assets.xcassets/   # App icon and menu bar template
 ├── MacEverythingUITests/  # Native UI tests

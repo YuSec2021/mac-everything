@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E8B10001 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B20001; };
 		C1000001 /* mcp_main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2000001; };
 		A1000001 /* MacEverythingApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001; };
 		A1000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002; };
@@ -15,6 +16,7 @@
 		A1000005 /* ResultRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000005; };
 		A1000006 /* PermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006; };
 		A1000007 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
+		E7Q10001 /* QuickLookPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7Q20001; };
 		A1000008 /* MacSearchBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = A2000009; };
 		A1000009 /* DirectoryScanner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A200000B; };
 		A100000A /* SearchEngine.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A200000D; };
@@ -77,6 +79,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		E8B20001 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
 		A2000001 /* MacEverythingApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEverythingApp.swift; sourceTree = "<group>"; };
 		A2000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A2000003 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
@@ -84,6 +87,7 @@
 		A2000005 /* ResultRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultRow.swift; sourceTree = "<group>"; };
 		A2000006 /* PermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionView.swift; sourceTree = "<group>"; };
 		A2000007 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
+		E7Q20001 /* QuickLookPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookPreview.swift; sourceTree = "<group>"; };
 		A2000008 /* MacSearchBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSearchBridge.h; sourceTree = "<group>"; };
 		A2000009 /* MacSearchBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = MacSearchBridge.mm; sourceTree = "<group>"; };
 		A200000A /* DirectoryScanner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DirectoryScanner.h; sourceTree = "<group>"; };
@@ -253,12 +257,14 @@
 			isa = PBXGroup;
 			children = (
 				A2000001 /* MacEverythingApp.swift */,
+				E8B20001 /* AboutView.swift */,
 				A2000002 /* AppDelegate.swift */,
 				A2000003 /* SearchViewModel.swift */,
 				A2000004 /* ContentView.swift */,
 				A2000005 /* ResultRow.swift */,
 				A2000006 /* PermissionView.swift */,
 				A2000007 /* HotkeyManager.swift */,
+				E7Q20001 /* QuickLookPreview.swift */,
 				A200001A /* ShortcutSettingsView.swift */,
 				A200001F /* ContentResultRow.swift */,
 				A2000020 /* ContentSettingsView.swift */,
@@ -446,12 +452,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				A1000001 /* MacEverythingApp.swift in Sources */,
+				E8B10001 /* AboutView.swift in Sources */,
 				A1000002 /* AppDelegate.swift in Sources */,
 				A1000003 /* SearchViewModel.swift in Sources */,
 				A1000004 /* ContentView.swift in Sources */,
 				A1000005 /* ResultRow.swift in Sources */,
 				A1000006 /* PermissionView.swift in Sources */,
 				A1000007 /* HotkeyManager.swift in Sources */,
+				E7Q10001 /* QuickLookPreview.swift in Sources */,
 				A1000008 /* MacSearchBridge.mm in Sources */,
 				A1000009 /* DirectoryScanner.cpp in Sources */,
 				A100000A /* SearchEngine.cpp in Sources */,

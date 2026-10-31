@@ -1,272 +1,26 @@
 import SwiftUI
 
 struct ContentView: View {
-    @StateObject private var viewModel = SearchViewModel()
+    @ObservedObject private var viewModel = SearchViewModel.shared
     @ObservedObject private var searchOptions = SearchOptions.shared
-    @State private var scrollViewID = 0
     @FocusState private var isSearchFieldFocused: Bool
+    @FocusState private var isResultsFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            // Permission banner
             PermissionView()
-
-            // Search bar (Alfred-style)
-            HStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 26, weight: .medium))
-                    .foregroundColor(.blue)
-                HighlightedSearchField(
-                    text: $viewModel.searchText,
-                    placeholder: "Search files... (infile: for content search)",
-                    ghostSuggestion: viewModel.ghostSuggestion,
-                    isFocused: $isSearchFieldFocused,
-                    onTab: {
-                        if viewModel.ghostSuggestion != nil {
-                            viewModel.acceptGhostSuggestion()
-                            return true
-                        }
-                        return false
-                    }
-                )
-                .frame(height: 36)
-                .onChange(of: viewModel.searchText) {
-                    viewModel.onSearchTextChanged()
-                }
-                SearchOptionBadges(options: searchOptions)
-                if !viewModel.searchText.isEmpty {
-                    Button {
-                        viewModel.searchText = ""
-                        // H-8: .onChange(of: searchText) will trigger onSearchTextChanged() automatically
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("clearButton")
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 16)
-            .background(.ultraThinMaterial)
-            .cornerRadius(10)
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.blue, lineWidth: 2)
-            )
-            .padding(.horizontal, 8)
-            .padding(.top, 8)
-
+            searchBar
             Divider()
-
-            // Status bar
-            HStack {
-                if viewModel.isScanning {
-                    ProgressView()
-                        .controlSize(.small)
-                    Text("Scanning... \(viewModel.scannedCount) items scanned")
-                        .foregroundColor(.secondary)
-                } else if viewModel.scanComplete {
-                    if viewModel.isSyncing {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Syncing...")
-                            .foregroundColor(.orange)
-                    } else if viewModel.isMonitoring {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 6, height: 6)
-                        Text("Live")
-                            .foregroundColor(.green)
-                            .fontWeight(.medium)
-                    }
-                    Text("\(viewModel.totalRecords) files indexed")
-                        .foregroundColor(.secondary)
-                        .accessibilityIdentifier("indexedCount")
-                    if viewModel.isContentIndexing, let progress = viewModel.contentIndexProgress {
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Content indexing \(progress.indexed)/\(progress.total)")
-                            .foregroundColor(.orange)
-                    }
-                    if viewModel.totalMatches > 0 {
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        Text("\(viewModel.totalMatches) matches")
-                            .foregroundColor(.secondary)
-                            .accessibilityIdentifier("matchCount")
-                        Text("·")
-                            .foregroundColor(.secondary)
-                        Text(String(format: "%.1fms", viewModel.queryTimeMs))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                Spacer()
-            }
-            .font(.callout)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
-            .background(Color(nsColor: .controlBackgroundColor))
-            .accessibilityIdentifier("statusBar")
-
+            resultsHeader
+            results
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .textBackgroundColor))
             Divider()
-
-            // Results list
-            if viewModel.isScanning {
-                VStack(spacing: 12) {
-                    Spacer()
-                    ProgressView()
-                        .controlSize(.large)
-                    Text("Indexing files... \(viewModel.scannedCount) items scanned")
-                        .font(.callout)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-            } else if viewModel.isContentSearch {
-                // Content search results
-                if viewModel.contentResults.isEmpty && !viewModel.contentKeyword.isEmpty && viewModel.scanComplete {
-                    VStack(spacing: 8) {
-                        Spacer()
-                        if viewModel.isContentIndexing {
-                            ProgressView()
-                                .controlSize(.large)
-                                .padding(.bottom, 4)
-                            Text("Content index is building...")
-                                .font(.headline)
-                                .foregroundColor(.orange)
-                            if let progress = viewModel.contentIndexProgress {
-                                Text("Indexed \(progress.indexed) / \(progress.total) files")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                            }
-                            Text("Search results will appear after indexing completes")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        } else {
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .font(.system(size: 36))
-                                .foregroundColor(.secondary.opacity(0.5))
-                                .padding(.bottom, 4)
-                            Text("No content matches found")
-                                .foregroundColor(.secondary)
-                            if viewModel.contentIndexedCount == 0 {
-                                Text("No files indexed. Configure extensions in Content Settings.")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-                        Spacer()
-                    }
-                } else if viewModel.contentKeyword.isEmpty {
-                    VStack {
-                        Spacer()
-                        Text("Type a keyword after infile: to search file contents")
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 0) {
-                            ForEach(viewModel.contentResults) { item in
-                                ContentResultRow(item: item, keyword: viewModel.contentKeyword)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 2)
-                            }
-                        }
-                    }
-                    .id(scrollViewID)
-                    .accessibilityIdentifier("contentResultsList")
-
-                    if viewModel.totalMatches > 0 {
-                        HStack {
-                            Spacer()
-                            Text("\(viewModel.contentResults.count) content matches")
-                                .font(.callout)
-                                .foregroundColor(.secondary)
-                                .padding(8)
-                            Spacer()
-                        }
-                        .background(Color(nsColor: .controlBackgroundColor))
-                    }
-                }
-            } else if viewModel.displayItems.isEmpty && !viewModel.searchText.isEmpty && viewModel.scanComplete {
-                VStack {
-                    Spacer()
-                    Text("No results found")
-                        .foregroundColor(.secondary)
-                        .accessibilityIdentifier("noResultsLabel")
-                    Spacer()
-                }
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        if viewModel.showingRecent && !viewModel.displayItems.isEmpty {
-                            HStack {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "clock")
-                                    Text("Recent Files")
-                                        .font(.callout)
-                                        .fontWeight(.medium)
-                                }
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 3)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 5)
-                                        .fill(Color.orange)
-                                )
-                                Spacer()
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                        }
-                        ForEach(viewModel.displayItems) { item in
-                            ResultRow(item: item, hints: viewModel.highlightHints)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 2)
-                                .id(item.id)
-                        }
-                        if viewModel.hasMoreResults {
-                            HStack {
-                                Spacer()
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Loading more results...")
-                                    .font(.callout)
-                                    .foregroundColor(.secondary)
-                                Spacer()
-                            }
-                            .padding(.vertical, 8)
-                            .onAppear {
-                                viewModel.loadMore()
-                            }
-                        }
-                    }
-                }
-                .id(scrollViewID)
-                .accessibilityIdentifier("fileResultsList")
-                .animation(.easeInOut(duration: 0.25), value: viewModel.showingRecent)
-
-                if viewModel.totalMatches > 0 {
-                    HStack {
-                        Spacer()
-                        Text("Showing \(viewModel.displayItems.count) of \(viewModel.totalMatches) results")
-                            .font(.callout)
-                            .foregroundColor(.secondary)
-                            .padding(8)
-                        Spacer()
-                    }
-                    .background(Color(nsColor: .controlBackgroundColor))
-                }
-            }
+            statusBar
         }
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(minWidth: 600, minHeight: 400)
-        .onReceive(NotificationCenter.default.publisher(for: .rebuildIndex)) { _ in
-            viewModel.rebuildIndex()
-        }
+        .onAppear { isSearchFieldFocused = true }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             viewModel.onWindowFocusChanged(true)
             isSearchFieldFocused = true
@@ -274,8 +28,290 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in
             viewModel.onWindowFocusChanged(false)
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didDeminiaturizeNotification)) { _ in
-            scrollViewID += 1
+    }
+
+    private var searchBar: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 18, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+                HighlightedSearchField(
+                    text: $viewModel.searchText,
+                    placeholder: "Search files and folders",
+                    ghostSuggestion: viewModel.ghostSuggestion,
+                    isFocused: $isSearchFieldFocused,
+                    onTab: {
+                        guard viewModel.ghostSuggestion != nil else { return false }
+                        viewModel.acceptGhostSuggestion()
+                        return true
+                    },
+                    onDownArrow: focusResults
+                )
+                .frame(height: 26)
+                .onChange(of: viewModel.searchText) {
+                    viewModel.onSearchTextChanged()
+                }
+                if !viewModel.searchText.isEmpty {
+                    Button {
+                        viewModel.searchText = ""
+                        isSearchFieldFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear search")
+                    .accessibilityLabel("Clear search")
+                    .accessibilityIdentifier("clearButton")
+                }
+                Divider().frame(height: 20)
+                Menu {
+                    Toggle("Case Sensitive", isOn: $searchOptions.isCaseSensitive)
+                    Toggle("Regex", isOn: $searchOptions.isRegex)
+                    Toggle("Whole Word", isOn: $searchOptions.isWholeWord)
+                    Toggle("Match Filename", isOn: $searchOptions.isMatchFilename)
+                } label: {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(searchOptions.hasActiveOptions ? Color.accentColor : .secondary)
+                        .frame(width: 26, height: 26)
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Search options")
+                .accessibilityLabel("Search options")
+                .accessibilityIdentifier("searchOptionsMenu")
+                Button {
+                    SearchSyntaxHelpWindowController.shared.showWindow()
+                } label: {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 15))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 26)
+                }
+                .buttonStyle(.plain)
+                .help("Search syntax help (⇧⌘/)")
+                .accessibilityLabel("Search syntax help")
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .overlay {
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(isSearchFieldFocused ? Color.accentColor.opacity(0.55) : Color.primary.opacity(0.12), lineWidth: 1)
+            }
+
+            if searchOptions.hasActiveOptions {
+                SearchOptionBadges(options: searchOptions)
+            }
         }
+        .padding(16)
+    }
+
+    private var resultsHeader: some View {
+        HStack(spacing: 8) {
+            Label(viewModel.isContentSearch ? "File contents" : "Search results",
+                  systemImage: viewModel.isContentSearch ? "doc.text.magnifyingglass" : "doc.on.doc")
+                .font(.system(size: 12, weight: .semibold))
+            if viewModel.totalMatches > 0 {
+                Text("\(viewModel.totalMatches) matches")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("matchCount")
+            }
+            Spacer()
+            if !viewModel.isContentSearch {
+                Text("Size")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .padding(.horizontal, 22)
+        .frame(height: 36)
+    }
+
+    @ViewBuilder
+    private var results: some View {
+        if viewModel.isScanning {
+            emptyState(symbol: "externaldrive", title: "Building your file index",
+                       detail: "\(viewModel.scannedCount) items scanned", isLoading: true)
+        } else if viewModel.searchText.isEmpty {
+            emptyState(symbol: "magnifyingglass", title: "Find anything on your Mac",
+                       detail: "Search by file name or path. Use infile: to search file contents.")
+        } else if viewModel.isContentSearch {
+            if viewModel.contentKeyword.isEmpty {
+                emptyState(symbol: "doc.text.magnifyingglass", title: "Search inside your files",
+                           detail: "Type a keyword after infile: to find matching content.")
+            } else if viewModel.contentResults.isEmpty && viewModel.scanComplete {
+                if viewModel.isContentIndexing {
+                    emptyState(symbol: "doc.text.magnifyingglass", title: "Content index is building",
+                               detail: contentProgressText, isLoading: true)
+                } else {
+                    emptyState(symbol: "doc.text.magnifyingglass", title: "No content matches found",
+                               detail: viewModel.contentIndexedCount == 0
+                               ? "Choose file extensions in Content Settings to get started."
+                               : "Try a different keyword or check your content settings.")
+                }
+            } else {
+                ScrollViewReader { proxy in
+                    List(selection: $viewModel.selectedResultID) {
+                        ForEach(viewModel.contentResults) { item in
+                            ContentResultRow(item: item, keyword: viewModel.contentKeyword)
+                                .listRowInsets(EdgeInsets())
+                                .listRowSeparator(.hidden)
+                                .id(item.id)
+                        }
+                    }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
+                    .padding(8)
+                    .modifier(ResultListKeys(proxy: proxy, isFocused: $isResultsFocused, onExitTop: focusSearchField))
+                    .accessibilityIdentifier("contentResultsList")
+                }
+            }
+        } else if viewModel.displayItems.isEmpty && !viewModel.searchText.isEmpty && viewModel.scanComplete {
+            emptyState(symbol: "magnifyingglass", title: "No results found",
+                       detail: "Try a different name, or broaden your search filters.")
+                .accessibilityIdentifier("noResultsLabel")
+        } else {
+            ScrollViewReader { proxy in
+                List(selection: $viewModel.selectedResultID) {
+                    ForEach(viewModel.displayItems) { item in
+                        ResultRow(item: item, hints: viewModel.highlightHints)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .id(item.id)
+                    }
+                    if viewModel.hasMoreResults {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.small)
+                            Text("Loading more results…")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        .padding(12)
+                        .listRowSeparator(.hidden)
+                        .onAppear { viewModel.loadMore() }
+                    }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .modifier(ResultListKeys(proxy: proxy, isFocused: $isResultsFocused, onExitTop: focusSearchField))
+                .accessibilityIdentifier("fileResultsList")
+            }
+        }
+    }
+
+    /// ↓ in the search field moves focus to the results, selecting the first one.
+    private func focusResults() -> Bool {
+        guard let first = viewModel.firstResultID else { return false }
+        if viewModel.selectedResultID == nil { viewModel.selectedResultID = first }
+        isSearchFieldFocused = false
+        isResultsFocused = true
+        return true
+    }
+
+    private func focusSearchField() {
+        QuickLookPreview.shared.close()
+        isResultsFocused = false
+        isSearchFieldFocused = true
+    }
+
+    private var contentProgressText: String {
+        if let progress = viewModel.contentIndexProgress {
+            return "Indexed \(progress.indexed) of \(progress.total) files. Results will appear when ready."
+        }
+        return "Results will appear after indexing completes."
+    }
+
+    private func emptyState(symbol: String, title: String, detail: String, isLoading: Bool = false) -> some View {
+        VStack(spacing: 10) {
+            if isLoading {
+                ProgressView().controlSize(.regular).padding(.bottom, 6)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(.tertiary)
+                    .padding(.bottom, 6)
+            }
+            Text(title).font(.system(size: 14, weight: .medium))
+            Text(detail)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var statusBar: some View {
+        HStack(spacing: 7) {
+            if viewModel.isScanning || viewModel.isSyncing {
+                ProgressView().controlSize(.mini)
+                Text(viewModel.isScanning ? "Scanning…" : "Syncing…")
+            } else if viewModel.isMonitoring {
+                Circle().fill(.green).frame(width: 5, height: 5)
+                Text("Live")
+            }
+            if viewModel.scanComplete {
+                Text("\(viewModel.totalRecords) files indexed")
+                    .accessibilityIdentifier("indexedCount")
+            }
+            if viewModel.isContentIndexing, let progress = viewModel.contentIndexProgress {
+                Text("· Content \(progress.indexed)/\(progress.total)")
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            if viewModel.totalMatches > 0 {
+                let count = viewModel.isContentSearch ? viewModel.contentResults.count : viewModel.displayItems.count
+                Text("\(count) shown · \(String(format: "%.1f ms", viewModel.queryTimeMs))")
+            } else {
+                Text("Double-click to open · ⌘ click to reveal")
+            }
+        }
+        .font(.system(size: 10))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 16)
+        .frame(height: 30)
+        .accessibilityIdentifier("statusBar")
+    }
+}
+
+/// Keyboard handling shared by both result lists: Space toggles Quick Look, Esc closes it,
+/// and ↑ on the first row returns to the search field. These only fire while the list has
+/// focus, so Space still types normally in the search field.
+private struct ResultListKeys: ViewModifier {
+    @ObservedObject private var viewModel = SearchViewModel.shared
+    let proxy: ScrollViewProxy
+    var isFocused: FocusState<Bool>.Binding
+    let onExitTop: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .focused(isFocused)
+            .onKeyPress(.space) {
+                QuickLookPreview.shared.toggle()
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                guard QuickLookPreview.shared.isVisible else { return .ignored }
+                QuickLookPreview.shared.close()
+                return .handled
+            }
+            .onKeyPress(.upArrow) {
+                guard viewModel.selectedResultID == nil || viewModel.selectedResultID == viewModel.firstResultID else {
+                    return .ignored
+                }
+                onExitTop()
+                return .handled
+            }
+            .onChange(of: viewModel.selectedResultID) {
+                // Keeps the row visible when the selection moves from the Quick Look panel.
+                if let id = viewModel.selectedResultID { proxy.scrollTo(id) }
+            }
     }
 }
