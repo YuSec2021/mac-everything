@@ -5,6 +5,7 @@ test_all
 maceverything-daemon
 *.o
 *.dmg
+dist/
 
 # Xcode
 *.xcuserdata
