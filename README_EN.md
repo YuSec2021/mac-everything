@@ -26,7 +26,7 @@
   <img src="assets/screen-shot.png" alt="MacEverything Screenshot" width="720" />
 </p>
 
-## Latest Updates · 2026-10-22
+## Latest Updates · 2026-11-04
 
 Current version: **1.2 (Build 3)**. Created by **YuSec**.
 
@@ -34,6 +34,9 @@ Current version: **1.2 (Build 3)**. Created by **YuSec**.
 - **Query and mutation improvements**: specialized substring loops, per-thread Top-K, directory candidates and batched posting removal. Deleting 41,562 records on the fixed snapshot dropped from about **1.4 s to 0.25 s**.
 - **Menu bar search and paged results**: all searching happens in the menu bar panel (no main window, no Dock icon); load 100 results initially, then fetch more while scrolling.
 - **New icon, logo and About window**: open **About MacEverything** from the app menu or the menu bar icon's context menu for the author, version, GitHub link and version notes.
+- **Hotkey conflict checks and floating panel**: the shortcut editor flags conflicts with macOS, MacEverything's own menus and common app shortcuts; when the menu bar icon is hidden by the notch or a menu bar manager, the hotkey opens the same search view in a floating panel.
+- **Reliability fixes**: rescanning the root directory replaces every record instead of producing duplicate results; full index rewrites are rate-limited by WAL growth to reduce write amplification.
+- **Automated releases**: pushing a `v*` tag builds Apple Silicon (arm64) and Intel (x86_64) DMGs in CI and publishes them to Releases with SHA256 checksums.
 
 Figures come from existing local audits and depend on hardware and workload. See the [memory changelog](docs/changelog/146-resident-memory-optimization.md), [algorithm changelog](docs/changelog/147-query-and-prefix-removal.md) and [full history](docs/changelog/README.md) (Chinese).
 
@@ -47,7 +50,7 @@ These are local core-engine timings, excluding GUI debounce, bridging and render
 
 ### Always at Your Fingertips
 
-Press **`Option+Space`** to open the menu bar search panel by default. Configure the shortcut in Shortcut Settings; pressing it again closes the panel and returns to the previous app. Left-click the menu bar icon to search, or right-click it (or use the gear in the panel) for Rebuild Index, shortcut and content settings, MCP, Launch at Login, About and Quit. The panel focuses the input automatically; **Escape** dismisses it. The app lives in the menu bar and supports launch at login.
+Press **`Option+Space`** to open the menu bar search panel by default. Configure the shortcut in Shortcut Settings; pressing it again closes the panel and returns to the previous app. Left-click the menu bar icon to search, or right-click it (or use the gear in the panel) for Rebuild Index, shortcut and content settings, MCP, Launch at Login, About and Quit. The panel focuses the input automatically; **Escape** dismisses it. Shortcuts are checked for conflicts when you set them, and if the menu bar icon is hidden by the notch or a menu bar manager, the hotkey opens search in a floating panel. The app lives in the menu bar with no Dock icon and supports launch at login.
 
 ### Smart Input Experience
 
@@ -107,7 +110,7 @@ Type `infile:keyword` to search file contents — results include highlighted co
 
 - **File monitoring** — FSEvents-based real-time file system listener; new, renamed, or deleted files appear in search results immediately
 - **Two-phase instant startup** — loads the v6 cache to make search available, then builds acceleration indexes and catches up with changes in the background; queries can fall back to scanning before indexes are ready
-- **Focus-aware power saving** — pauses refresh when the window is in the background, batch-catches up on refocus. Near-zero background CPU usage
+- **Focus-aware power saving** — pauses refresh when the app is in the background, batch-catches up on refocus. Near-zero background CPU usage
 
 ### Interaction Details
 
@@ -155,7 +158,7 @@ curl "http://localhost:19860/api/status"                          # Index status
 
 #### Download DMG (Recommended)
 
-1. Download `MacEverything.dmg` from [Releases](https://github.com/YuSec2021/mac-everything/releases)
+1. Download the DMG for your Mac from [Releases](https://github.com/YuSec2021/mac-everything/releases): `MacEverything-<version>-arm64.dmg` for Apple Silicon or `MacEverything-<version>-x86_64.dmg` for Intel (verify with `SHA256SUMS.txt`)
 2. Drag `MacEverything.app` to Applications
 3. Launch and grant **Full Disk Access** when prompted
 4. Allow the initial index to build; time depends on the disk, file count and access permissions
@@ -177,10 +180,8 @@ xcodebuild -project MacEverything.xcodeproj -scheme MacEverything \
 ditto build/Release/MacEverything.app /Applications/MacEverything.app
 open /Applications/MacEverything.app
 
-# Optional: package a DMG
-hdiutil create -volname MacEverything \
-  -srcfolder build/Release/MacEverything.app \
-  -ov -format UDZO MacEverything.dmg
+# Optional: package a DMG (statically links re2/abseil; writes dist/MacEverything-<version>-<arch>.dmg)
+scripts/build-dmg.sh arm64 1.2
 ```
 
 #### CLI Daemon
@@ -282,7 +283,7 @@ See the [memory changelog](docs/changelog/146-resident-memory-optimization.md) a
 | Session cancellation | Successive GUI queries cancel within their session; independent HTTP requests remain isolated |
 | RE2 / FilteredRE2 | Per-thread regex caches with safe regex candidate pre-filtering |
 | v6 + WAL | Flat SoA cache, streaming CRC and atomic replacement; full saves still amplify I/O and briefly defer mutations |
-| Paged bridge | Shared engine across windows; ID snapshots produce pages, skip tombstones and require a new query after compaction |
+| Paged bridge | Menu bar panel and HTTP API share the engine; ID snapshots produce pages, skip tombstones and require a new query after compaction |
 
 ### Testing
 

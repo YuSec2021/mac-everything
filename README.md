@@ -26,7 +26,7 @@
   <img src="assets/screen-shot.png" alt="MacEverything Screenshot" width="720" />
 </p>
 
-## 最新更新 · 2026-10-22
+## 最新更新 · 2026-11-04
 
 当前版本 **1.2（Build 3）**，作者 **YuSec**。
 
@@ -34,6 +34,9 @@
 - **查询与增量更新优化**：专用字符串扫描、每线程 Top-K、目录候选展开与批量倒排表删除；固定快照中删除 41,562 条记录由约 **1.4 s 降至 0.25 s**。
 - **菜单栏搜索与分页结果**：搜索全部在菜单栏弹出面板中完成（无主窗口、无 Dock 图标）；首批加载 100 条，滚动时继续取页。
 - **全新 icon、logo 与 About**：应用菜单或菜单栏右键菜单打开 **About MacEverything**，查看作者、版本、GitHub 和更新说明。
+- **快捷键冲突检查与浮动面板**：设置快捷键时提示与系统或常用快捷键的冲突；菜单栏图标被刘海或菜单栏管理工具隐藏时，快捷键改为在浮动面板中打开同一搜索界面。
+- **稳定性修复**：重扫根目录时完整替换全部记录，不再产生重复结果；全量索引重写按 WAL 增长限流，减少写放大。
+- **自动发布**：推送 `v*` 版本标签后，CI 自动构建 Apple Silicon（arm64）与 Intel（x86_64）DMG 并附带 SHA256 校验和发布到 Releases。
 
 内存与耗时来自已有本机审计，并非所有机器和负载的保证。详见 [内存优化日志](docs/changelog/146-resident-memory-optimization.md)、[算法更新日志](docs/changelog/147-query-and-prefix-removal.md) 和 [完整变更记录](docs/changelog/README.md)。
 
@@ -47,7 +50,7 @@
 
 ### 随叫随到
 
-按 **`Option+Space`** 默认唤出菜单栏搜索面板；快捷键可在 Shortcut Settings 中配置，再按一次关闭面板并回到之前的应用。也可左键点击菜单栏图标搜索，右键或面板右上角齿轮打开设置菜单（重建索引、快捷键/内容设置、MCP、开机自启、关于、退出）。面板自动聚焦，按 **Escape** 关闭。应用常驻菜单栏，支持开机自启。
+按 **`Option+Space`** 默认唤出菜单栏搜索面板；快捷键可在 Shortcut Settings 中配置，再按一次关闭面板并回到之前的应用。也可左键点击菜单栏图标搜索，右键或面板右上角齿轮打开设置菜单（重建索引、快捷键/内容设置、MCP、开机自启、关于、退出）。面板自动聚焦，按 **Escape** 关闭。设置快捷键时会检查冲突；若菜单栏图标被刘海或菜单栏管理工具隐藏，快捷键会在浮动面板中打开搜索。应用常驻菜单栏、不占 Dock，支持开机自启。
 
 ### 智能输入体验
 
@@ -107,7 +110,7 @@
 
 - **文件监控** — 基于 FSEvents 实时监听文件系统变更，新建、重命名、删除的文件立即出现在搜索结果中
 - **两阶段即时启动** — 先加载 v6 缓存使搜索可用，后台构建加速索引并追赶文件变更；索引未就绪时可回退扫描
-- **焦点感知省电** — 窗口不在前台时暂停刷新，回到前台时批量追赶，几乎零后台 CPU 占用
+- **焦点感知省电** — 应用不在前台时暂停刷新，回到前台时批量追赶，几乎零后台 CPU 占用
 
 ### 交互细节
 
@@ -155,7 +158,7 @@ curl "http://localhost:19860/api/status"                          # 索引状态
 
 #### 下载 DMG（推荐）
 
-1. 从 [Releases](https://github.com/YuSec2021/mac-everything/releases) 下载 `MacEverything.dmg`
+1. 从 [Releases](https://github.com/YuSec2021/mac-everything/releases) 下载对应架构的 DMG：Apple Silicon 选 `MacEverything-<版本>-arm64.dmg`，Intel 选 `MacEverything-<版本>-x86_64.dmg`（可用 `SHA256SUMS.txt` 校验）
 2. 将 `MacEverything.app` 拖入「应用程序」文件夹
 3. 启动后按提示授予 **完全磁盘访问权限**
 4. 首次启动等待索引建立；时间取决于磁盘、文件数量及访问权限
@@ -177,10 +180,8 @@ xcodebuild -project MacEverything.xcodeproj -scheme MacEverything \
 ditto build/Release/MacEverything.app /Applications/MacEverything.app
 open /Applications/MacEverything.app
 
-# 可选：打包 DMG
-hdiutil create -volname MacEverything \
-  -srcfolder build/Release/MacEverything.app \
-  -ov -format UDZO MacEverything.dmg
+# 可选：打包 DMG（静态链接 re2/abseil，输出 dist/MacEverything-<版本>-<架构>.dmg）
+scripts/build-dmg.sh arm64 1.2
 ```
 
 #### CLI 守护进程
