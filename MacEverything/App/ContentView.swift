@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @ObservedObject private var viewModel = SearchViewModel.shared
-    @ObservedObject private var searchOptions = SearchOptions.shared
+    @Bindable private var viewModel = SearchViewModel.shared
+    @Bindable private var searchOptions = SearchOptions.shared
     @FocusState private var isSearchFieldFocused: Bool
     @FocusState private var isResultsFocused: Bool
 
@@ -16,7 +16,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .textBackgroundColor))
             Divider()
-            statusBar
+            ResultsStatusBar()
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .frame(minWidth: 600, minHeight: 400)
@@ -156,10 +156,11 @@ struct ContentView: View {
                                : "Try a different keyword or check your content settings.")
                 }
             } else {
+                let keyword = viewModel.contentKeyword
                 ScrollViewReader { proxy in
                     List(selection: $viewModel.selectedResultID) {
                         ForEach(viewModel.contentResults) { item in
-                            ContentResultRow(item: item, keyword: viewModel.contentKeyword)
+                            ContentResultRow(item: item, keyword: keyword)
                                 .listRowInsets(EdgeInsets())
                                 .listRowSeparator(.hidden)
                                 .id(item.id)
@@ -177,10 +178,11 @@ struct ContentView: View {
                        detail: "Try a different name, or broaden your search filters.")
                 .accessibilityIdentifier("noResultsLabel")
         } else {
+            let hints = viewModel.highlightHints
             ScrollViewReader { proxy in
                 List(selection: $viewModel.selectedResultID) {
                     ForEach(viewModel.displayItems) { item in
-                        ResultRow(item: item, hints: viewModel.highlightHints)
+                        ResultRow(item: item, hints: hints)
                             .listRowInsets(EdgeInsets())
                             .listRowSeparator(.hidden)
                             .id(item.id)
@@ -247,8 +249,13 @@ struct ContentView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
 
-    private var statusBar: some View {
+/// Its own view so index, sync and timing updates redraw only this bar, not the results.
+private struct ResultsStatusBar: View {
+    private let viewModel = SearchViewModel.shared
+
+    var body: some View {
         HStack(spacing: 7) {
             if viewModel.isScanning || viewModel.isSyncing {
                 ProgressView().controlSize(.mini)
@@ -281,17 +288,35 @@ struct ContentView: View {
     }
 }
 
-/// Keyboard handling shared by both result lists: Space toggles Quick Look, Esc closes it,
-/// and ↑ on the first row returns to the search field. These only fire while the list has
+/// Keyboard and mouse handling shared by both result lists: Space toggles Quick Look, Esc
+/// closes it, ↑ on the first row returns to the search field, and Return or double-click
+/// opens the selection (⌘ reveals it in Finder). The keys only fire while the list has
 /// focus, so Space still types normally in the search field.
 private struct ResultListKeys: ViewModifier {
-    @ObservedObject private var viewModel = SearchViewModel.shared
+    private let viewModel = SearchViewModel.shared
     let proxy: ScrollViewProxy
     var isFocused: FocusState<Bool>.Binding
     let onExitTop: () -> Void
 
     func body(content: Content) -> some View {
         content
+            .contextMenu(forSelectionType: String.self) { ids in
+                let targets = ids.compactMap { viewModel.resultTarget(for: $0) }
+                if !targets.isEmpty {
+                    Button("Open") {
+                        for target in targets { FileActions.open(target.url, isApp: target.isApp) }
+                    }
+                    Button("Reveal in Finder") { FileActions.reveal(targets.map(\.url)) }
+                    Divider()
+                    Button(targets.count > 1 ? "Copy Paths" : "Copy Path") {
+                        FileActions.copyPaths(targets.map(\.url))
+                    }
+                }
+            } primaryAction: { ids in
+                for target in ids.compactMap({ viewModel.resultTarget(for: $0) }) {
+                    FileActions.performPrimaryAction(on: target.url, isApp: target.isApp)
+                }
+            }
             .focused(isFocused)
             .onKeyPress(.space) {
                 QuickLookPreview.shared.toggle()

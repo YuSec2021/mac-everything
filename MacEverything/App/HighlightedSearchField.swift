@@ -218,6 +218,8 @@ struct HighlightedSearchField: NSViewRepresentable {
     }
 
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        // Keep the coordinator's binding and callbacks from this render, not the first one.
+        context.coordinator.parent = self
         guard let textView = scrollView.documentView as? HighlightedNSTextView else { return }
 
         // Update text if externally changed (e.g., clear button, ghost suggestion accept)

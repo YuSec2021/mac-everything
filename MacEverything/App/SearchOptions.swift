@@ -1,11 +1,12 @@
 import SwiftUI
-import Combine
+import Observation
 
 @MainActor
-class SearchOptions: ObservableObject {
+@Observable
+final class SearchOptions {
     static let shared = SearchOptions()
 
-    @Published var isRegex: Bool = false {
+    var isRegex: Bool = false {
         didSet {
             if isRegex {
                 isWholeWord = false
@@ -13,8 +14,8 @@ class SearchOptions: ObservableObject {
             }
         }
     }
-    @Published var isCaseSensitive: Bool = false
-    @Published var isWholeWord: Bool = false {
+    var isCaseSensitive: Bool = false
+    var isWholeWord: Bool = false {
         didSet {
             if isWholeWord {
                 isRegex = false
@@ -22,7 +23,7 @@ class SearchOptions: ObservableObject {
             }
         }
     }
-    @Published var isMatchFilename: Bool = false {
+    var isMatchFilename: Bool = false {
         didSet {
             if isMatchFilename {
                 isRegex = false
@@ -50,7 +51,7 @@ class SearchOptions: ObservableObject {
 }
 
 struct SearchOptionBadges: View {
-    @ObservedObject var options: SearchOptions
+    let options: SearchOptions
 
     var body: some View {
         if options.hasActiveOptions {

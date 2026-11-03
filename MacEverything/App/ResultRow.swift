@@ -55,6 +55,36 @@ final class FileIconCache {
     }
 }
 
+/// Open / reveal / copy for result rows; the result lists' context menu and primary
+/// action (double-click, Return) call these with the rows' file URLs.
+enum FileActions {
+    /// ⌘ turns the primary action into Reveal in Finder.
+    static func performPrimaryAction(on url: URL, isApp: Bool) {
+        if NSEvent.modifierFlags.contains(.command) {
+            reveal([url])
+        } else {
+            open(url, isApp: isApp)
+        }
+    }
+
+    static func open(_ url: URL, isApp: Bool) {
+        if isApp {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        } else if !NSWorkspace.shared.open(url) {
+            NSSound.beep()
+        }
+    }
+
+    static func reveal(_ urls: [URL]) {
+        NSWorkspace.shared.activateFileViewerSelecting(urls)
+    }
+
+    static func copyPaths(_ urls: [URL]) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(urls.map(\.path).joined(separator: "\n"), forType: .string)
+    }
+}
+
 struct ResultRow: View {
     let item: FileItem
     let hints: [HighlightHint]
@@ -97,28 +127,13 @@ struct ResultRow: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .contextMenu {
-            Button("Open") { openFile(item) }
-            Button("Reveal in Finder") { revealInFinder(item) }
-            Divider()
-            Button("Copy Path") { copyPath(item) }
-        }
         .onDrag {
             let fullPath = item.path + "/" + item.name
             return NSItemProvider(object: NSURL(fileURLWithPath: fullPath))
         }
-        // Simultaneous gestures leave the click to the List too, so it can select the row.
-        .simultaneousGesture(TapGesture(count: 2).onEnded {
-            if NSEvent.modifierFlags.contains(.command) {
-                revealInFinder(item)
-            } else {
-                openFile(item)
-            }
-        })
-        .simultaneousGesture(TapGesture(count: 1).onEnded {
-            if NSEvent.modifierFlags.contains(.command) {
-                revealInFinder(item)
-            }
+        // Simultaneous leaves the click to the List too, so it still selects the row.
+        .simultaneousGesture(TapGesture().modifiers(.command).onEnded {
+            FileActions.reveal([URL(fileURLWithPath: item.path + "/" + item.name)])
         })
         .accessibilityIdentifier("resultRow")
     }
@@ -137,28 +152,5 @@ struct ResultRow: View {
         }
         if unitIndex == 0 { return "\(bytes) B" }
         return String(format: "%.1f %@", size, units[unitIndex])
-    }
-
-    private func openFile(_ item: FileItem) {
-        let fullPath = item.path + "/" + item.name
-        if item.type == 5 {
-            let url = URL(fileURLWithPath: fullPath)
-            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-        } else {
-            if !NSWorkspace.shared.open(URL(fileURLWithPath: fullPath)) {
-                NSSound.beep()
-            }
-        }
-    }
-
-    private func revealInFinder(_ item: FileItem) {
-        let fullPath = item.path + "/" + item.name
-        NSWorkspace.shared.selectFile(fullPath, inFileViewerRootedAtPath: "")
-    }
-
-    private func copyPath(_ item: FileItem) {
-        let fullPath = item.path + "/" + item.name
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(fullPath, forType: .string)
     }
 }

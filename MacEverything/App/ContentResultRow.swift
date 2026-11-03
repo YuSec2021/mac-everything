@@ -46,27 +46,12 @@ struct ContentResultRow: View {
         .onHover { hovering in
             isHovered = hovering
         }
-        .contextMenu {
-            Button("Open") { openFile() }
-            Button("Reveal in Finder") { revealInFinder() }
-            Divider()
-            Button("Copy Path") { copyPath() }
-        }
         .onDrag {
             return NSItemProvider(object: NSURL(fileURLWithPath: item.filePath))
         }
-        // Simultaneous gestures leave the click to the List too, so it can select the row.
-        .simultaneousGesture(TapGesture(count: 2).onEnded {
-            if NSEvent.modifierFlags.contains(.command) {
-                revealInFinder()
-            } else {
-                openFile()
-            }
-        })
-        .simultaneousGesture(TapGesture(count: 1).onEnded {
-            if NSEvent.modifierFlags.contains(.command) {
-                revealInFinder()
-            }
+        // Simultaneous leaves the click to the List too, so it still selects the row.
+        .simultaneousGesture(TapGesture().modifiers(.command).onEnded {
+            FileActions.reveal([URL(fileURLWithPath: item.filePath)])
         })
         .accessibilityIdentifier("contentResultRow")
     }
@@ -80,20 +65,5 @@ struct ContentResultRow: View {
 
     private func fileIcon(for path: String) -> Image {
         Image(nsImage: FileIconCache.shared.icon(forPath: path))
-    }
-
-    private func openFile() {
-        if !NSWorkspace.shared.open(URL(fileURLWithPath: item.filePath)) {
-            NSSound.beep()
-        }
-    }
-
-    private func revealInFinder() {
-        NSWorkspace.shared.selectFile(item.filePath, inFileViewerRootedAtPath: "")
-    }
-
-    private func copyPath() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(item.filePath, forType: .string)
     }
 }
