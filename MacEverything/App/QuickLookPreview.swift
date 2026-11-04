@@ -1,5 +1,4 @@
 import Cocoa
-import Combine
 import Quartz
 
 /// Drives the shared Quick Look panel for the selected search result.
@@ -13,7 +12,6 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
 
     private let viewModel = SearchViewModel.shared
     private var previewURL: URL?
-    private var selectionSink: AnyCancellable?
     /// Told when the preview opens (true) and closes (false), so the transient menu bar
     /// popover can stay open while the panel is in front of it.
     var onVisibilityChange: ((Bool) -> Void)?
@@ -46,14 +44,11 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
         previewURL = viewModel.selectedResultURL
         panel.dataSource = self
         panel.delegate = self
-        selectionSink = viewModel.$selectedResultID
-            .removeDuplicates()
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.selectionChanged() }
+        viewModel.onSelectionChange = { [weak self] in self?.selectionChanged() }
     }
 
     func end(_ panel: QLPreviewPanel) {
-        selectionSink = nil
+        viewModel.onSelectionChange = nil
         previewURL = nil
         panel.dataSource = nil
         panel.delegate = nil

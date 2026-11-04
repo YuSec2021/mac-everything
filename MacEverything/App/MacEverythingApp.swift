@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct MacEverythingApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @ObservedObject private var searchOptions = SearchOptions.shared
+    @Bindable private var searchOptions = SearchOptions.shared
 
     /// MacEverything lives in the menu bar (LSUIElement), so it has no window scene. The
     /// Settings scene is only a host for the menu commands below: their key equivalents
@@ -64,9 +64,25 @@ struct MacEverythingApp: App {
     }
 }
 
-class ContentSettingsWindowController {
-    static let shared = ContentSettingsWindowController()
+/// Shows a SwiftUI view in a standalone window, bringing it forward if it is already open.
+/// A closed window is replaced on the next show, so the view starts from fresh state.
+final class HostingWindowController<Content: View> {
+    private let title: String
+    private let styleMask: NSWindow.StyleMask
+    private let contentSize: NSSize?
+    private let minSize: NSSize?
+    private let makeContent: () -> Content
     private var window: NSWindow?
+
+    init(title: String, styleMask: NSWindow.StyleMask = [.titled, .closable],
+         contentSize: NSSize? = nil, minSize: NSSize? = nil,
+         content: @escaping () -> Content) {
+        self.title = title
+        self.styleMask = styleMask
+        self.contentSize = contentSize
+        self.minSize = minSize
+        self.makeContent = content
+    }
 
     func showWindow() {
         if let existing = window, existing.isVisible {
@@ -74,57 +90,32 @@ class ContentSettingsWindowController {
             return
         }
 
-        let settingsView = ContentSettingsView()
-        let hostingController = NSHostingController(rootView: settingsView)
-        let win = NSWindow(contentViewController: hostingController)
-        win.title = "Content Settings"
-        win.styleMask = [.titled, .closable]
+        let win = NSWindow(contentViewController: NSHostingController(rootView: makeContent()))
+        win.title = title
+        win.styleMask = styleMask
+        // `window` holds the only reference; AppKit must not also release it on close.
+        win.isReleasedWhenClosed = false
+        if let contentSize { win.setContentSize(contentSize) }
+        if let minSize { win.minSize = minSize }
         win.center()
         win.makeKeyAndOrderFront(nil)
         window = win
     }
 }
 
-class ShortcutSettingsWindowController {
-    static let shared = ShortcutSettingsWindowController()
-    private var window: NSWindow?
-
-    func showWindow() {
-        if let existing = window, existing.isVisible {
-            existing.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        let settingsView = ShortcutSettingsView()
-        let hostingController = NSHostingController(rootView: settingsView)
-        let win = NSWindow(contentViewController: hostingController)
-        win.title = "Shortcut Settings"
-        win.styleMask = [.titled, .closable]
-        win.center()
-        win.makeKeyAndOrderFront(nil)
-        window = win
-    }
+enum ContentSettingsWindowController {
+    static let shared = HostingWindowController(title: "Content Settings") { ContentSettingsView() }
 }
 
-class SearchSyntaxHelpWindowController {
-    static let shared = SearchSyntaxHelpWindowController()
-    private var window: NSWindow?
+enum ShortcutSettingsWindowController {
+    static let shared = HostingWindowController(title: "Shortcut Settings") { ShortcutSettingsView() }
+}
 
-    func showWindow() {
-        if let existing = window, existing.isVisible {
-            existing.makeKeyAndOrderFront(nil)
-            return
-        }
-
-        let helpView = SearchSyntaxHelpView()
-        let hostingController = NSHostingController(rootView: helpView)
-        let win = NSWindow(contentViewController: hostingController)
-        win.title = "Search Syntax Help"
-        win.styleMask = [.titled, .closable, .resizable]
-        win.setContentSize(NSSize(width: 580, height: 720))
-        win.minSize = NSSize(width: 450, height: 400)
-        win.center()
-        win.makeKeyAndOrderFront(nil)
-        window = win
-    }
+enum SearchSyntaxHelpWindowController {
+    static let shared = HostingWindowController(
+        title: "Search Syntax Help",
+        styleMask: [.titled, .closable, .resizable],
+        contentSize: NSSize(width: 580, height: 720),
+        minSize: NSSize(width: 450, height: 400)
+    ) { SearchSyntaxHelpView() }
 }

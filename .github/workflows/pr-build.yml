@@ -1,0 +1,40 @@
+name: PR Build
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x86_64
+            runner: macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Cache static re2/abseil
+        uses: actions/cache@v4
+        with:
+          path: build/release-${{ matrix.arch }}/deps
+          key: deps-${{ matrix.arch }}-${{ hashFiles('scripts/build-dmg.sh') }}
+
+      - name: Build and verify DMG
+        run: scripts/build-dmg.sh "${{ matrix.arch }}"

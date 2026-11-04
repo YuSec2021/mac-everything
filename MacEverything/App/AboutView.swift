@@ -44,7 +44,7 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("版本说明 / Version notes")
                     .font(.headline)
-                Text("全新蓝绿渐变图标与品牌标志；新增 About 窗口，集中展示作者、版本和项目地址。\n\n支持文件名与内容搜索、高级查询语法、全局快捷键及 MCP 集成。")
+                Text("菜单栏搜索支持分页结果、快捷键冲突检查及浮动面板，并提供 Quick Look 和 Finder 定位。\n\n优化大索引内存与查询性能，修复目录重扫及索引写入问题；新增 Apple Silicon 与 Intel 的 PR 构建验证。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

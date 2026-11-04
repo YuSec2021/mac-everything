@@ -1,5 +1,5 @@
 import Foundation
-import Combine
+import Observation
 
 struct FileItem: Identifiable {
     let id: String      // path-based stable ID
@@ -20,28 +20,37 @@ struct ContentFileItem: Identifiable {
     let fileType: UInt8
 }
 
+/// Observation tracks each property separately, so a view only re-renders for the
+/// properties it actually read (e.g. scan progress no longer redraws the result rows).
 @MainActor
-class SearchViewModel: ObservableObject {
+@Observable
+final class SearchViewModel {
     static let shared = SearchViewModel()
-    @Published var searchText: String = ""
-    @Published var displayItems: [FileItem] = []
-    @Published var totalMatches: Int = 0
-    @Published var isScanning: Bool = false
-    @Published var scanComplete: Bool = false
-    @Published var totalRecords: UInt32 = 0
-    @Published var queryTimeMs: Double = 0
-    @Published var isMonitoring: Bool = false
-    @Published var scannedCount: UInt64 = 0
-    var isLoadingMore: Bool = false
-    @Published var isContentSearch: Bool = false
-    @Published var contentResults: [ContentFileItem] = []
-    @Published var isContentIndexing: Bool = false
-    @Published var contentIndexProgress: (indexed: UInt32, total: UInt32)?
-    @Published var contentIndexedCount: UInt32 = 0
-    @Published var isSyncing: Bool = false
-    @Published var ghostSuggestion: String? = nil
+    var searchText: String = ""
+    private(set) var displayItems: [FileItem] = []
+    var totalMatches: Int = 0
+    var isScanning: Bool = false
+    var scanComplete: Bool = false
+    var totalRecords: UInt32 = 0
+    var queryTimeMs: Double = 0
+    var isMonitoring: Bool = false
+    var scannedCount: UInt64 = 0
+    @ObservationIgnored var isLoadingMore: Bool = false
+    var isContentSearch: Bool = false {
+        didSet { if isContentSearch != oldValue { rebuildResultIndex() } }
+    }
+    private(set) var contentResults: [ContentFileItem] = []
+    var isContentIndexing: Bool = false
+    var contentIndexProgress: (indexed: UInt32, total: UInt32)?
+    var contentIndexedCount: UInt32 = 0
+    var isSyncing: Bool = false
+    var ghostSuggestion: String? = nil
     /// `id` of the selected row in whichever result list is showing (file or content).
-    @Published var selectedResultID: String?
+    var selectedResultID: String? {
+        didSet { if selectedResultID != oldValue { onSelectionChange?() } }
+    }
+    /// Called after `selectedResultID` changes; Quick Look follows the selection with it.
+    @ObservationIgnored var onSelectionChange: (() -> Void)?
 
     /// Structured highlight hints extracted from the C++ query AST.
     /// Replaces the old keyword-based approach with field-aware, mode-aware hints.
@@ -55,26 +64,28 @@ class SearchViewModel: ObservableObject {
         return cachedHighlightHints
     }
 
-    private var cachedHighlightQuery: String?
-    private var cachedHighlightHints: [HighlightHint] = []
+    // Written while a view reads `highlightHints`, so it must not be observed.
+    @ObservationIgnored private var cachedHighlightQuery: String?
+    @ObservationIgnored private var cachedHighlightHints: [HighlightHint] = []
 
-    private let bridge = MacSearchBridge.shared()
-    private let historyStore = SearchHistoryStore()
-    private let searchOptions = SearchOptions.shared
-    private var searchTask: Task<Void, Never>?
-    private var settledTask: Task<Void, Never>?
-    private var optionsSink: AnyCancellable?
-    private var resultSnapshot: MEQuerySnapshot?
+    @ObservationIgnored private let bridge = MacSearchBridge.shared()
+    @ObservationIgnored private let historyStore = SearchHistoryStore()
+    @ObservationIgnored private let searchOptions = SearchOptions.shared
+    @ObservationIgnored private var searchTask: Task<Void, Never>?
+    @ObservationIgnored private var settledTask: Task<Void, Never>?
+    @ObservationIgnored private var resultSnapshot: MEQuerySnapshot?
     private var loadedCount: Int = 0
-    private var searchGeneration: UInt64 = 0
+    @ObservationIgnored private var searchGeneration: UInt64 = 0
+    /// Row position by `id` for the list that is showing, so selection lookups are O(1).
+    @ObservationIgnored private var resultIndexByID: [String: Int] = [:]
     private static let guiSessionId: UInt64 = 1
 
     private static let pageSize: Int = 100
     private static let maxResults: UInt32 = 10000
     private static let indexChangeThrottleNs: UInt64 = 5_000_000_000 // 5 seconds
 
-    private var indexChangeTask: Task<Void, Never>?
-    let refreshThrottle = IndexRefreshThrottle()
+    @ObservationIgnored private var indexChangeTask: Task<Void, Never>?
+    @ObservationIgnored let refreshThrottle = IndexRefreshThrottle()
 
     static var cacheDir: String {
         let base = NSSearchPathForDirectoriesInDomains(
@@ -104,12 +115,22 @@ class SearchViewModel: ObservableObject {
     }
 
     init() {
-        optionsSink = searchOptions.objectWillChange.sink { [weak self] _ in
+        observeSearchOptions()
+        startIncremental()
+    }
+
+    /// Re-runs the search when a search option changes. `onChange` fires before the new
+    /// value is stored, so the search runs on the next main-actor turn; by then the
+    /// options' mutually exclusive resets have landed too, and they cost one search.
+    private func observeSearchOptions() {
+        withObservationTracking {
+            _ = searchOptions.buildQuery(" ")
+        } onChange: { [weak self] in
             Task { @MainActor [weak self] in
                 self?.onSearchOptionsChanged()
+                self?.observeSearchOptions()
             }
         }
-        startIncremental()
     }
 
     private func onSearchOptionsChanged() {
@@ -183,10 +204,10 @@ class SearchViewModel: ObservableObject {
         searchGeneration &+= 1
         resultSnapshot = nil
         scanComplete = false
-        displayItems = []
+        setDisplayItems([])
         totalMatches = 0
         queryTimeMs = 0
-        contentResults = []
+        setContentResults([])
         isContentSearch = false
         contentKeyword = ""
 
@@ -211,28 +232,28 @@ class SearchViewModel: ObservableObject {
             resultSnapshot = nil
             loadedCount = 0
             isContentSearch = false
-            contentResults = []
+            setContentResults([])
             contentKeyword = "" // H-9: reset cached keyword
             ghostSuggestion = nil
             selectedResultID = nil
             settledTask?.cancel()
             // Cancel any in-flight queries for this GUI session
             bridge.cancelSession(Self.guiSessionId)
-            displayItems = []
+            setDisplayItems([])
             return
         }
 
         let lowerText = text.lowercased()
         if lowerText.hasPrefix("infile:") {
             isContentSearch = true
-            displayItems = []
+            setDisplayItems([])
             resultSnapshot = nil
             loadedCount = 0
 
             let keyword = String(text.dropFirst(7))
             contentKeyword = keyword // H-9: cache computed keyword
             guard !keyword.isEmpty else {
-                contentResults = []
+                setContentResults([])
                 totalMatches = 0
                 queryTimeMs = 0
                 return
@@ -246,7 +267,7 @@ class SearchViewModel: ObservableObject {
             }
         } else {
             isContentSearch = false
-            contentResults = []
+            setContentResults([])
             contentKeyword = "" // H-9: reset cached keyword
 
             searchTask = Task { @MainActor in
@@ -290,7 +311,7 @@ class SearchViewModel: ObservableObject {
                 guard let self, self.searchGeneration == gen else { return }
                 self.resultSnapshot = snapshot
                 self.loadedCount = min(snapshot.count, pageSize)
-                self.displayItems = items
+                self.setDisplayItems(items)
                 self.dropStaleSelection()
                 self.totalMatches = snapshot.count
                 self.queryTimeMs = elapsed
@@ -321,7 +342,7 @@ class SearchViewModel: ObservableObject {
 
             await MainActor.run { [weak self] in
                 guard let self, self.searchGeneration == gen else { return }
-                self.contentResults = items
+                self.setContentResults(items)
                 self.dropStaleSelection()
                 self.totalMatches = items.count
                 self.queryTimeMs = elapsed
@@ -348,7 +369,7 @@ class SearchViewModel: ObservableObject {
                     self.performSearch(self.searchText)
                     return
                 }
-                self.displayItems.append(contentsOf: items)
+                self.appendDisplayItems(items)
                 self.loadedCount = min(currentLoaded + pageSize, snapshot.count)
             }
         }
@@ -407,35 +428,68 @@ class SearchViewModel: ObservableObject {
 
     // MARK: - Selection
 
-    private var selectableIDs: [String] {
-        isContentSearch ? contentResults.map(\.id) : displayItems.map(\.id)
+    // Only one list shows at a time, and the other one is always empty, so a single
+    // index covers both.
+    private func setDisplayItems(_ items: [FileItem]) {
+        displayItems = items
+        if !isContentSearch { rebuildResultIndex() }
+    }
+
+    private func appendDisplayItems(_ items: [FileItem]) {
+        let start = displayItems.count
+        displayItems.append(contentsOf: items)
+        for (offset, item) in items.enumerated() { resultIndexByID[item.id] = start + offset }
+    }
+
+    private func setContentResults(_ items: [ContentFileItem]) {
+        contentResults = items
+        if isContentSearch { rebuildResultIndex() }
+    }
+
+    private func rebuildResultIndex() {
+        let ids = isContentSearch ? contentResults.map(\.id) : displayItems.map(\.id)
+        resultIndexByID = Dictionary(ids.enumerated().map { ($1, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    private var resultCount: Int {
+        isContentSearch ? contentResults.count : displayItems.count
+    }
+
+    private func resultID(at index: Int) -> String {
+        isContentSearch ? contentResults[index].id : displayItems[index].id
     }
 
     var firstResultID: String? {
         isContentSearch ? contentResults.first?.id : displayItems.first?.id
     }
 
-    var selectedResultURL: URL? {
-        guard let id = selectedResultID else { return nil }
+    /// The file a result row stands for, and whether it opens as an application.
+    func resultTarget(for id: String) -> (url: URL, isApp: Bool)? {
+        guard let index = resultIndexByID[id], index < resultCount else { return nil }
         if isContentSearch {
-            return contentResults.first { $0.id == id }.map { URL(fileURLWithPath: $0.filePath) }
+            return (URL(fileURLWithPath: contentResults[index].filePath), false)
         }
-        return displayItems.first { $0.id == id }.map { URL(fileURLWithPath: $0.path + "/" + $0.name) }
+        let item = displayItems[index]
+        return (URL(fileURLWithPath: item.path + "/" + item.name), item.type == 5)
+    }
+
+    var selectedResultURL: URL? {
+        selectedResultID.flatMap { resultTarget(for: $0)?.url }
     }
 
     func moveSelection(by delta: Int) {
-        let ids = selectableIDs
-        guard !ids.isEmpty else { return }
-        guard let current = selectedResultID, let index = ids.firstIndex(of: current) else {
-            selectedResultID = ids.first
+        let count = resultCount
+        guard count > 0 else { return }
+        guard let current = selectedResultID, let index = resultIndexByID[current] else {
+            selectedResultID = resultID(at: 0)
             return
         }
-        selectedResultID = ids[min(max(index + delta, 0), ids.count - 1)]
-        if !isContentSearch, index + delta >= ids.count - 1 { loadMore() }
+        selectedResultID = resultID(at: min(max(index + delta, 0), count - 1))
+        if !isContentSearch, index + delta >= count - 1 { loadMore() }
     }
 
     private func dropStaleSelection() {
-        if let id = selectedResultID, !selectableIDs.contains(id) { selectedResultID = nil }
+        if let id = selectedResultID, resultIndexByID[id] == nil { selectedResultID = nil }
     }
 
     var hasMoreResults: Bool {
