@@ -60,7 +60,10 @@ final class FileIconCache {
 enum FileActions {
     /// ⌘ turns the primary action into Reveal in Finder.
     static func performPrimaryAction(on url: URL, isApp: Bool) {
-        if NSEvent.modifierFlags.contains(.command) {
+        // The triggering click/key event carries the flags it was sent with; the global
+        // state can lag behind it.
+        let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+        if flags.contains(.command) {
             reveal([url])
         } else {
             open(url, isApp: isApp)
