@@ -10,15 +10,15 @@ struct ContentView: View {
         VStack(spacing: 0) {
             PermissionView()
             searchBar
-            Divider()
+            Glass.hairline.frame(height: 1)
             resultsHeader
+            Glass.hairline.frame(height: 1)
             results
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color(nsColor: .textBackgroundColor))
-            Divider()
+            Glass.hairline.frame(height: 1)
             ResultsStatusBar()
         }
-        .background(Color(nsColor: .windowBackgroundColor))
+        .foregroundStyle(Glass.text)
         .frame(minWidth: 600, minHeight: 400)
         .onAppear { isSearchFieldFocused = true }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
@@ -34,8 +34,8 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(Glass.secondaryText)
                     .accessibilityHidden(true)
                 HighlightedSearchField(
                     text: $viewModel.searchText,
@@ -59,14 +59,15 @@ struct ContentView: View {
                         isSearchFieldFocused = true
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 15))
+                            .foregroundStyle(Glass.secondaryText)
                     }
                     .buttonStyle(.plain)
                     .help("Clear search")
                     .accessibilityLabel("Clear search")
                     .accessibilityIdentifier("clearButton")
                 }
-                Divider().frame(height: 20)
+                Rectangle().fill(.white.opacity(0.15)).frame(width: 1, height: 22)
                 Menu {
                     Toggle("Case Sensitive", isOn: $searchOptions.isCaseSensitive)
                     Toggle("Regex", isOn: $searchOptions.isRegex)
@@ -75,8 +76,8 @@ struct ContentView: View {
                 } label: {
                     Image(systemName: "line.3.horizontal.decrease")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundStyle(searchOptions.hasActiveOptions ? Color.accentColor : .secondary)
-                        .frame(width: 26, height: 26)
+                        .foregroundStyle(searchOptions.hasActiveOptions ? Glass.accent : Glass.secondaryText)
+                        .frame(width: 28, height: 28)
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -87,50 +88,50 @@ struct ContentView: View {
                 Button {
                     SearchSyntaxHelpWindowController.shared.showWindow()
                 } label: {
-                    Image(systemName: "questionmark.circle")
-                        .font(.system(size: 15))
-                        .foregroundStyle(.secondary)
-                        .frame(width: 24, height: 26)
+                    Image(systemName: "questionmark")
+                        .font(.system(size: 11, weight: .semibold))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(GlassIconButtonStyle(size: 22))
                 .help("Search syntax help (⇧⌘/)")
                 .accessibilityLabel("Search syntax help")
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                RoundedRectangle(cornerRadius: 10)
-                    .strokeBorder(isSearchFieldFocused ? Color.accentColor.opacity(0.55) : Color.primary.opacity(0.12), lineWidth: 1)
-            }
+            .padding(.leading, 18)
+            .padding(.trailing, 12)
+            .frame(height: 54)
+            .glassSurface(RoundedRectangle(cornerRadius: 15, style: .continuous), isFocused: isSearchFieldFocused)
 
             if searchOptions.hasActiveOptions {
                 SearchOptionBadges(options: searchOptions)
             }
         }
-        .padding(16)
+        .padding(.horizontal, 18)
+        .padding(.top, 6)
+        .padding(.bottom, 16)
     }
 
     private var resultsHeader: some View {
         HStack(spacing: 8) {
             Label(viewModel.isContentSearch ? "File contents" : "Search results",
-                  systemImage: viewModel.isContentSearch ? "doc.text.magnifyingglass" : "doc.on.doc")
+                  systemImage: viewModel.isContentSearch ? "doc.text.magnifyingglass" : "square.stack")
                 .font(.system(size: 12, weight: .semibold))
+                .labelStyle(GlassHeaderLabelStyle())
             if viewModel.totalMatches > 0 {
                 Text("\(viewModel.totalMatches) matches")
                     .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Glass.secondaryText)
                     .accessibilityIdentifier("matchCount")
             }
             Spacer()
             if !viewModel.isContentSearch {
-                Text("Size")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
+                Text("SIZE")
+                    .font(.system(size: 9, weight: .medium))
+                    .tracking(1)
+                    .foregroundStyle(Glass.tertiaryText)
+                    .padding(.trailing, 6)
             }
         }
-        .padding(.horizontal, 22)
-        .frame(height: 36)
+        .padding(.horizontal, 24)
+        .frame(height: 38)
     }
 
     @ViewBuilder
@@ -140,7 +141,8 @@ struct ContentView: View {
                        detail: "\(viewModel.scannedCount) items scanned", isLoading: true)
         } else if viewModel.searchText.isEmpty {
             emptyState(symbol: "magnifyingglass", title: "Find anything on your Mac",
-                       detail: "Search by file name or path. Use infile: to search file contents.")
+                       detail: "Search by file name or path. Use infile: to search file contents.",
+                       showsKeyHints: true)
         } else if viewModel.isContentSearch {
             if viewModel.contentKeyword.isEmpty {
                 emptyState(symbol: "doc.text.magnifyingglass", title: "Search inside your files",
@@ -168,7 +170,9 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
-                    .padding(8)
+                    .background(ListSelectionHighlightRemover())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
                     .modifier(ResultListKeys(proxy: proxy, isFocused: $isResultsFocused, onExitTop: focusSearchField))
                     .accessibilityIdentifier("contentResultsList")
                 }
@@ -192,7 +196,7 @@ struct ContentView: View {
                             ProgressView().controlSize(.small)
                             Text("Loading more results…")
                                 .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(Glass.secondaryText)
                         }
                         .padding(12)
                         .listRowSeparator(.hidden)
@@ -201,7 +205,9 @@ struct ContentView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .padding(8)
+                .background(ListSelectionHighlightRemover())
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
                 .modifier(ResultListKeys(proxy: proxy, isFocused: $isResultsFocused, onExitTop: focusSearchField))
                 .accessibilityIdentifier("fileResultsList")
             }
@@ -230,24 +236,86 @@ struct ContentView: View {
         return "Results will appear after indexing completes."
     }
 
-    private func emptyState(symbol: String, title: String, detail: String, isLoading: Bool = false) -> some View {
-        VStack(spacing: 10) {
-            if isLoading {
-                ProgressView().controlSize(.regular).padding(.bottom, 6)
-            } else {
-                Image(systemName: symbol)
-                    .font(.system(size: 30, weight: .light))
-                    .foregroundStyle(.tertiary)
-                    .padding(.bottom, 6)
+    private func emptyState(symbol: String, title: String, detail: String, isLoading: Bool = false,
+                            showsKeyHints: Bool = false) -> some View {
+        VStack(spacing: 8) {
+            Group {
+                if isLoading {
+                    ProgressView().controlSize(.regular)
+                } else {
+                    Image(systemName: symbol)
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(Glass.accent.opacity(0.9))
+                }
             }
-            Text(title).font(.system(size: 14, weight: .medium))
+            .frame(width: 64, height: 64)
+            .glassSurface(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.bottom, 10)
+            Text(title)
+                .font(.system(size: 17, weight: .bold))
+                .tracking(-0.3)
             Text(detail)
                 .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Glass.secondaryText)
                 .multilineTextAlignment(.center)
+                .lineSpacing(3)
+            if showsKeyHints {
+                HStack(spacing: 4) {
+                    GlassKeyCap(key: "↓")
+                    Text("Browse results").padding(.trailing, 10)
+                    GlassKeyCap(key: "Space")
+                    Text("Quick Look")
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(Glass.tertiaryText)
+                .padding(.top, 14)
+            }
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// Label with a dimmed icon, for the results header.
+private struct GlassHeaderLabelStyle: LabelStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        HStack(spacing: 8) {
+            configuration.icon.foregroundStyle(Glass.secondaryText)
+            configuration.title
+        }
+    }
+}
+
+/// Turns off the result tables' native selection highlight so rows can draw their own
+/// glass selection. Selection itself, keyboard navigation and the primary action still
+/// come from the List.
+private struct ListSelectionHighlightRemover: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { Probe() }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? Probe)?.removeHighlights()
+    }
+
+    private final class Probe: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            removeHighlights()
+        }
+
+        /// Deferred a turn so the List's table is in the window by the time we look.
+        func removeHighlights() {
+            DispatchQueue.main.async { [weak self] in
+                guard let root = self?.window?.contentView else { return }
+                for table in Self.tables(in: root) where table.selectionHighlightStyle != .none {
+                    table.selectionHighlightStyle = .none
+                }
+            }
+        }
+
+        private static func tables(in view: NSView) -> [NSTableView] {
+            if let table = view as? NSTableView { return [table] }
+            return view.subviews.flatMap(tables(in:))
+        }
     }
 }
 
@@ -261,11 +329,17 @@ private struct ResultsStatusBar: View {
                 ProgressView().controlSize(.mini)
                 Text(viewModel.isScanning ? "Scanning…" : "Syncing…")
             } else if viewModel.isMonitoring {
-                Circle().fill(.green).frame(width: 5, height: 5)
+                Circle()
+                    .fill(Glass.live)
+                    .frame(width: 6, height: 6)
+                    .shadow(color: Glass.live.opacity(0.6), radius: 4)
                 Text("Live")
+                    .fontWeight(.medium)
+                    .foregroundStyle(Glass.text.opacity(0.85))
             }
             if viewModel.scanComplete {
-                Text("\(viewModel.totalRecords) files indexed")
+                if viewModel.isMonitoring || viewModel.isSyncing { Text("·").opacity(0.5) }
+                Text("\(viewModel.totalRecords.formatted()) files indexed")
                     .accessibilityIdentifier("indexedCount")
             }
             if viewModel.isContentIndexing, let progress = viewModel.contentIndexProgress {
@@ -280,10 +354,10 @@ private struct ResultsStatusBar: View {
                 Text("Double-click to open · ⌘ click to reveal")
             }
         }
-        .font(.system(size: 10))
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 16)
-        .frame(height: 30)
+        .font(.system(size: 10.5))
+        .foregroundStyle(Glass.secondaryText)
+        .padding(.horizontal, 20)
+        .frame(height: 34)
         .accessibilityIdentifier("statusBar")
     }
 }

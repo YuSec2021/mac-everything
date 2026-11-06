@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		E8B10001 /* AboutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B20001; };
+		E8B10002 /* GlassStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8B20002; };
 		C1000001 /* mcp_main.cpp in Sources */ = {isa = PBXBuildFile; fileRef = C2000001; };
 		A1000001 /* MacEverythingApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000001; };
 		A1000002 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000002; };
@@ -80,6 +81,7 @@
 
 /* Begin PBXFileReference section */
 		E8B20001 /* AboutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutView.swift; sourceTree = "<group>"; };
+		E8B20002 /* GlassStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassStyle.swift; sourceTree = "<group>"; };
 		A2000001 /* MacEverythingApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacEverythingApp.swift; sourceTree = "<group>"; };
 		A2000002 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		A2000003 /* SearchViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchViewModel.swift; sourceTree = "<group>"; };
@@ -258,6 +260,7 @@
 			children = (
 				A2000001 /* MacEverythingApp.swift */,
 				E8B20001 /* AboutView.swift */,
+				E8B20002 /* GlassStyle.swift */,
 				A2000002 /* AppDelegate.swift */,
 				A2000003 /* SearchViewModel.swift */,
 				A2000004 /* ContentView.swift */,
@@ -453,6 +456,7 @@
 			files = (
 				A1000001 /* MacEverythingApp.swift in Sources */,
 				E8B10001 /* AboutView.swift in Sources */,
+				E8B10002 /* GlassStyle.swift in Sources */,
 				A1000002 /* AppDelegate.swift in Sources */,
 				A1000003 /* SearchViewModel.swift in Sources */,
 				A1000004 /* ContentView.swift in Sources */,

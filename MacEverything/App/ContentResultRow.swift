@@ -8,27 +8,25 @@ struct ContentResultRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            fileIcon(for: item.filePath)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+            GlassIconTile(image: FileIconCache.shared.icon(forPath: item.filePath))
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
                     Text(item.fileName)
                         .font(.system(size: 13))
-                        .fontWeight(.medium)
-                        .foregroundColor(.primary)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Glass.text)
                         .lineLimit(1)
 
                     Text(directoryPath(item.filePath))
                         .font(.system(size: 11))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Glass.secondaryText)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
 
-                highlightMatches(in: item.snippet, keyword: keyword, font: .caption, color: .secondary)
+                highlightMatches(in: item.snippet, keyword: keyword, font: .caption, color: Glass.secondaryText,
+                                 highlightColor: Glass.accent)
                     .lineLimit(2)
             }
 
@@ -36,11 +34,9 @@ struct ContentResultRow: View {
         }
         .frame(minHeight: 48)
         .padding(.vertical, 8)
-        .padding(.horizontal, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.primary.opacity(0.045) : Color.clear)
-        )
+        .padding(.horizontal, 12)
+        .background(GlassRowBackground(isSelected: SearchViewModel.shared.selectedResultID == item.id,
+                                       isHovered: isHovered))
         .help(item.filePath)
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -61,9 +57,5 @@ struct ContentResultRow: View {
             return String(fullPath[fullPath.startIndex..<range.lowerBound])
         }
         return fullPath
-    }
-
-    private func fileIcon(for path: String) -> Image {
-        Image(nsImage: FileIconCache.shared.icon(forPath: path))
     }
 }
