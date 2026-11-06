@@ -79,10 +79,11 @@ struct SearchOptionBadges: View {
                 Image(systemName: "xmark").font(.system(size: 8, weight: .semibold))
             }
             .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(Color.accentColor)
-            .padding(.horizontal, 7)
+            .foregroundStyle(Glass.accent)
+            .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(Color.accentColor.opacity(0.1), in: Capsule())
+            .background(Glass.accent.opacity(0.14), in: Capsule())
+            .overlay(Capsule().strokeBorder(Glass.accent.opacity(0.25), lineWidth: 1))
         }
         .buttonStyle(.plain)
         .help(help)

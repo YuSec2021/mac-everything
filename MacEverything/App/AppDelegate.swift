@@ -198,6 +198,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopoverDel
             popover.animates = false
             popover.delegate = self
             popover.contentSize = NSSize(width: 640, height: 500)
+            popover.appearance = NSAppearance(named: .darkAqua)
             popover.contentViewController = makeSearchView()
             searchPopover = popover
         }
@@ -215,6 +216,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopoverDel
             panel.styleMask = [.titled, .closable, .fullSizeContentView]
             panel.titleVisibility = .hidden
             panel.titlebarAppearsTransparent = true
+            // The search view has its own close button.
+            for button: NSWindow.ButtonType in [.closeButton, .miniaturizeButton, .zoomButton] {
+                panel.standardWindowButton(button)?.isHidden = true
+            }
+            panel.appearance = NSAppearance(named: .darkAqua)
             panel.level = .floating
             panel.hidesOnDeactivate = true
             panel.isReleasedWhenClosed = false
@@ -346,8 +352,23 @@ private struct MenuBarSearchView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("MacEverything").font(.system(size: 12, weight: .semibold))
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Glass.text)
+                    .frame(width: 32, height: 32)
+                    .glassSurface(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .padding(.trailing, 2)
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("MacEverything")
+                        .font(.system(size: 14, weight: .semibold))
+                        .tracking(-0.2)
+                        .foregroundStyle(Glass.text)
+                    Text("Find anything, instantly.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(Glass.secondaryText)
+                }
                 Spacer()
                 Menu {
                     Button("Rebuild Index") { actions.rebuildIndex() }
@@ -378,21 +399,26 @@ private struct MenuBarSearchView: View {
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
                 .fixedSize()
+                // Borderless menus drop a custom label's background, so the circle goes outside.
+                .frame(width: 28, height: 28)
+                .background(Circle().fill(.white.opacity(0.045)))
+                .overlay(Circle().strokeBorder(.white.opacity(0.09), lineWidth: 1))
                 .help("Settings and more")
                 .accessibilityLabel("Settings and more")
                 .accessibilityIdentifier("panelSettingsMenu")
-                Button(action: close) { Image(systemName: "xmark") }
+                Button(action: close) { Image(systemName: "xmark").font(.system(size: 11, weight: .semibold)) }
+                    .buttonStyle(GlassIconButtonStyle())
                     .help("Close search")
                     .accessibilityLabel("Close search")
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 18)
-            .padding(.top, 14)
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 14)
             ContentView()
         }
         .frame(width: 640, height: 500)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(GlassBackdrop())
+        .environment(\.colorScheme, .dark)
         .onExitCommand(perform: close)
         .onAppear { launchAtLogin = actions.isLaunchAtLoginEnabled }
     }

@@ -95,16 +95,14 @@ struct ResultRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            fileIcon(for: item)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 24, height: 24)
+            GlassIconTile(image: FileIconCache.shared.icon(for: item))
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
                 let highlighted = highlightCrossMatches(
                     path: item.path, name: item.name, hints: hints,
-                    nameFont: .system(size: 13, weight: .medium), nameColor: .primary,
-                    pathFont: .system(size: 11), pathColor: .secondary)
+                    nameFont: .system(size: 13, weight: .semibold), nameColor: Glass.text,
+                    pathFont: .system(size: 11), pathColor: Glass.secondaryText,
+                    highlightColor: Glass.accent)
                 highlighted.nameText.lineLimit(1).truncationMode(.middle)
                 highlighted.pathText.lineLimit(1).truncationMode(.middle)
             }
@@ -115,16 +113,14 @@ struct ResultRow: View {
                 Text(formatSize(item.size))
                     .font(.system(size: 11).monospacedDigit())
                     .frame(width: 72, alignment: .trailing)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Glass.secondaryText)
             }
         }
-        .frame(minHeight: 36)
-        .padding(.vertical, 3)
-        .padding(.horizontal, 14)
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(isHovered ? Color.primary.opacity(0.045) : Color.clear)
-        )
+        .frame(minHeight: 40)
+        .padding(.vertical, 5)
+        .padding(.horizontal, 12)
+        .background(GlassRowBackground(isSelected: SearchViewModel.shared.selectedResultID == item.id,
+                                       isHovered: isHovered))
         .help(item.path + "/" + item.name)
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -139,10 +135,6 @@ struct ResultRow: View {
             FileActions.reveal([URL(fileURLWithPath: item.path + "/" + item.name)])
         })
         .accessibilityIdentifier("resultRow")
-    }
-
-    private func fileIcon(for item: FileItem) -> Image {
-        Image(nsImage: FileIconCache.shared.icon(for: item))
     }
 
     private func formatSize(_ bytes: UInt64) -> String {
