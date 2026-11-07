@@ -28,7 +28,7 @@
 
 ## Latest Updates · 2026-11-04
 
-Current version: **1.2 (Build 3)**. Created by **YuSec**.
+Current version: **1.4.0 (Build 4)**. Created by **YuSec**.
 
 - **Smaller resident index**: shared directory/name storage, delta-compressed postings, compact path lookup and narrow metadata columns. A fixed snapshot with 6.38 million live records reached about **573 MiB** of ready physical footprint.
 - **Query and mutation improvements**: specialized substring loops, per-thread Top-K, directory candidates and batched posting removal. Deleting 41,562 records on the fixed snapshot dropped from about **1.4 s to 0.25 s**.
@@ -120,7 +120,7 @@ Type `infile:keyword` to search file contents — results include highlighted co
 - **Cmd+Click** — quickly locate files in Finder
 - **Recent files** — automatically shows recently modified files when the search bar is empty
 - **Quick Look** — press **Space** while the result list has focus to preview a file, then **Escape** to close the preview
-- **About** — view YuSec, version 1.2 (Build 3), and the GitHub link; [light](assets/branding/previews/about-light.png) / [dark](assets/branding/previews/about-dark.png) previews
+- **About** — view YuSec, version 1.4.0 (Build 4), and the GitHub link; [light](assets/branding/previews/about-light.png) / [dark](assets/branding/previews/about-dark.png) previews
 
 ### AI Tool Integration (MCP)
 
@@ -181,7 +181,7 @@ ditto build/Release/MacEverything.app /Applications/MacEverything.app
 open /Applications/MacEverything.app
 
 # Optional: package a DMG (statically links re2/abseil; writes dist/MacEverything-<version>-<arch>.dmg)
-scripts/build-dmg.sh arm64 1.2
+scripts/build-dmg.sh arm64 1.4.0
 ```
 
 #### CLI Daemon
