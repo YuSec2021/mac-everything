@@ -28,7 +28,7 @@
 
 ## 最新更新 · 2026-11-04
 
-当前版本 **1.2（Build 3）**，作者 **YuSec**。
+当前版本 **1.4.0（Build 4）**，作者 **YuSec**。
 
 - **更低的索引内存占用**：共享目录树与名称、差分压缩倒排表、紧凑路径表和元数据窄列；固定快照约 638 万条有效记录，就绪物理足迹约 **573 MiB**。
 - **查询与增量更新优化**：专用字符串扫描、每线程 Top-K、目录候选展开与批量倒排表删除；固定快照中删除 41,562 条记录由约 **1.4 s 降至 0.25 s**。
@@ -120,7 +120,7 @@
 - **Cmd+Click** — 快速在 Finder 中定位文件
 - **最近文件** — 搜索栏为空时自动展示最近修改的文件
 - **Quick Look** — 结果列表获得焦点后按 **Space** 预览文件，按 **Escape** 关闭预览
-- **About** — 查看 YuSec、1.2（Build 3）及 GitHub 链接；[浅色](assets/branding/previews/about-light.png) / [深色](assets/branding/previews/about-dark.png) 预览
+- **About** — 查看 YuSec、1.4.0（Build 4）及 GitHub 链接；[浅色](assets/branding/previews/about-light.png) / [深色](assets/branding/previews/about-dark.png) 预览
 
 ### AI 工具集成 (MCP)
 
@@ -181,7 +181,7 @@ ditto build/Release/MacEverything.app /Applications/MacEverything.app
 open /Applications/MacEverything.app
 
 # 可选：打包 DMG（静态链接 re2/abseil，输出 dist/MacEverything-<版本>-<架构>.dmg）
-scripts/build-dmg.sh arm64 1.2
+scripts/build-dmg.sh arm64 1.4.0
 ```
 
 #### CLI 守护进程
