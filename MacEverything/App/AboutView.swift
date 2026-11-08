@@ -44,7 +44,7 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("版本说明 / Version notes")
                     .font(.headline)
-                Text("1.4.0：应用常驻菜单栏，搜索面板改为液态玻璃风格，支持分页结果、快捷键冲突检查、Quick Look 和 Finder 定位。\n\n搜索界面改用 Observation 和原生列表操作，修复 ⌘ 点击定位 Finder；PR 自动构建 Apple Silicon 和 Intel 版本。\n\n此后修复：内容搜索的扩展名和文件大小上限设置会保存，重启后不再丢失。")
+                Text("1.4.0：应用常驻菜单栏，搜索面板改为液态玻璃风格，支持分页结果、快捷键冲突检查、Quick Look 和 Finder 定位。\n\n搜索界面改用 Observation 和原生列表操作，修复 ⌘ 点击定位 Finder；PR 自动构建 Apple Silicon 和 Intel 版本。\n\n此后修复：内容搜索的扩展名和文件大小上限设置会保存，重启后不再丢失；索引压缩同时触发时不再误删几乎全部记录。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
