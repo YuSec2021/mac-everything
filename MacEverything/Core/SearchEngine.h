@@ -235,7 +235,8 @@ public:
     /// Compact in-memory records by removing tombstoned entries.
     /// Rebuilds pathIndex_ and names_.lower(). Thread-safe.
     /// Returns a mapping from old index → new index for live records.
-    /// Returns empty map if nothing was compacted.
+    /// Returns empty map if nothing was compacted, including when another
+    /// compaction is already running.
     std::unordered_map<uint32_t, uint32_t> compactRecords();
 
     /// Save live records to a binary file (format v3). Thread-safe.
@@ -549,6 +550,7 @@ private:
 
     std::shared_ptr<IndexWAL> wal_;
     std::atomic<uint64_t> compactionGen_{0};
+    std::mutex compactionMutex_;  // held for a whole compactRecords() run
 
     // Phase 2 two-stage startup: trigram indices built in background
     std::atomic<bool> phase2Pending_{false};

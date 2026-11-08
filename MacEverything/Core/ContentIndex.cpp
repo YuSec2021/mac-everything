@@ -46,6 +46,44 @@ uint64_t ContentIndex::getMaxFileSize() const {
     return maxFileSize_;
 }
 
+// --- Settings persistence ---
+
+bool ContentIndex::saveConfig(const std::string& path) const {
+    std::string tmpPath = path + ".tmp";
+    {
+        std::ofstream out(tmpPath, std::ios::trunc);
+        if (!out) return false;
+        std::shared_lock lock(mutex_);
+        out << maxFileSize_ << "\n";
+        for (const auto& ext : extensions_) out << ext << "\n";
+        if (!out.flush()) return false;
+    }
+    // Rename so a crash mid-write never leaves a truncated config behind.
+    return std::rename(tmpPath.c_str(), path.c_str()) == 0;
+}
+
+bool ContentIndex::loadConfig(const std::string& path) {
+    std::ifstream in(path);
+    if (!in) return false;
+    std::string line;
+    if (!std::getline(in, line)) return false;
+    uint64_t maxSize = 0;
+    try {
+        maxSize = std::stoull(line);
+    } catch (...) {
+        return false;
+    }
+    if (maxSize == 0) return false;
+
+    std::vector<std::string> exts;
+    while (std::getline(in, line)) {
+        if (!line.empty()) exts.push_back(line);
+    }
+    setMaxFileSize(maxSize);
+    setExtensions(exts);
+    return true;
+}
+
 // --- Helpers ---
 
 uint64_t ContentIndex::hashContent(const std::string& content) {

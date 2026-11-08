@@ -149,10 +149,7 @@ int main(int argc, char* argv[]) {
         });
     };
     callbacks.onSetContentConfig = [&engine](const std::vector<std::string>& exts, uint64_t maxSize) {
-        auto ci = engine.safeContentIndex();
-        if (!ci) return;
-        ci->setExtensions(exts);
-        ci->setMaxFileSize(maxSize);
+        engine.setContentConfig(exts, maxSize);
     };
     callbacks.onGetContentExtensions = [&engine]() -> std::vector<std::string> {
         auto ci = engine.safeContentIndex();

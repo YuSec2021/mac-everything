@@ -174,6 +174,27 @@ void ServiceEngine::startContentIndexing() {
 }
 
 // ═══════════════════════════════════════════════════════
+//  Content settings
+// ═══════════════════════════════════════════════════════
+
+std::string ServiceEngine::contentConfigPath() const {
+    return config_.cachePath + "/content_config.txt";
+}
+
+void ServiceEngine::setContentConfig(const std::vector<std::string>& extensions, uint64_t maxFileSize) {
+    auto contentIndex = safeContentIndex();
+    if (!contentIndex) return;
+    contentIndex->setExtensions(extensions);
+    contentIndex->setMaxFileSize(maxFileSize);
+
+    std::error_code ec;
+    fs::create_directories(config_.cachePath, ec);
+    if (!contentIndex->saveConfig(contentConfigPath())) {
+        LOG_ERROR("ServiceEngine", "Failed to save content settings to " << contentConfigPath());
+    }
+}
+
+// ═══════════════════════════════════════════════════════
 //  Rebuild content index (cancel in-flight, clear, re-index)
 // ═══════════════════════════════════════════════════════
 

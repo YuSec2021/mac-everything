@@ -42,6 +42,36 @@ static bool runPart40() {
         check(!engine->isMonitoring(), "Not monitoring initially");
     }
 
+    // Test 1b: Content settings survive a restart
+    {
+        ServiceConfig config;
+        config.scanRoot = tmpBase.string();
+        config.cachePath = cachePath;
+        config.logPath = (tmpBase / "logs").string();
+
+        {
+            auto engine = std::make_unique<ServiceEngine>(config);
+            engine->setContentConfig({"md", "txt"}, 2 * 1024 * 1024);
+        }
+        auto restarted = std::make_unique<ServiceEngine>(config);
+        auto exts = restarted->safeContentIndex()->getExtensions();
+        std::sort(exts.begin(), exts.end());
+        check(exts == std::vector<std::string>({"md", "txt"}), "Content extensions restored after restart");
+        check(restarted->safeContentIndex()->getMaxFileSize() == 2 * 1024 * 1024,
+              "Content max file size restored after restart");
+
+        restarted->setContentConfig({}, 1024 * 1024);
+        auto cleared = std::make_unique<ServiceEngine>(config);
+        check(cleared->safeContentIndex()->getExtensions().empty(), "Clearing content extensions is also saved");
+
+        { std::ofstream f(cachePath + "/content_config.txt"); f << "not a number\nmd\n"; }
+        auto malformed = std::make_unique<ServiceEngine>(config);
+        check(malformed->safeContentIndex()->getExtensions().empty() &&
+              malformed->safeContentIndex()->getMaxFileSize() == 1024 * 1024,
+              "Malformed content settings fall back to defaults");
+        fs::remove(cachePath + "/content_config.txt");
+    }
+
     // Test 2: Full scan on tmpdir
     {
         ServiceConfig config;

@@ -588,6 +588,12 @@ void SearchEngine::batchMutate(std::vector<MutationOp>&& ops) {
 }
 
 std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
+    // Compaction renumbers every record, and Phase 3 compares its snapshot with the
+    // live data by those numbers. A second run overlapping the first would see every
+    // snapshot path as deleted, so it leaves the work to the run in progress.
+    std::unique_lock compactionGuard(compactionMutex_, std::try_to_lock);
+    if (!compactionGuard.owns_lock()) return {};
+
     // ── Phase 1: Snapshot under shared_lock ──
     // Queries continue unblocked during snapshot copy.
     std::vector<uint8_t> snapTypes;
@@ -601,10 +607,12 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     me::PathRecordTable snapPathIndex;
     std::vector<uint32_t> snapDirCanon;
     uint32_t snapSize;
+    uint64_t snapGeneration;
     {
         std::shared_lock lock(mutex_);
         uint32_t live = liveCount_.load(std::memory_order_relaxed);
         if (live == types_.size()) return {}; // nothing to compact
+        snapGeneration = compactionGen_.load(std::memory_order_relaxed);
         snapTypes = types_;
         snapSizes = sizes_;
         snapModTimes = modTimes_;
@@ -702,6 +710,12 @@ std::unordered_map<uint32_t, uint32_t> SearchEngine::compactRecords() {
     // number of mutations that occurred during Phase 2 (~milliseconds).
     {
         auto lock = lockForMutation();
+
+        // A reload during Phase 2 replaced the records this snapshot describes.
+        if (compactionGen_.load(std::memory_order_relaxed) != snapGeneration) {
+            LOG_WARN("SearchEngine", "COW compaction abandoned: records were reloaded during Phase 2");
+            return {};
+        }
 
         // Move out current (mutated-during-Phase2) state
         auto oldTypes = std::move(types_);

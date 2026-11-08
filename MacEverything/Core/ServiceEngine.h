@@ -70,6 +70,10 @@ public:
     /// Replace everything below dir with a fresh scan, keeping dir's own record. Synchronous.
     static void rescanDirectoryInto(SearchEngine& engine, const std::string& dir);
     void rebuildContentIndex();
+
+    /// Applies content indexing settings and saves them to the cache directory so they
+    /// survive restarts. Takes effect on the next content index rebuild.
+    void setContentConfig(const std::vector<std::string>& extensions, uint64_t maxFileSize);
     void compactIndex();
 
     // ── Thread-safe accessors ──
@@ -118,6 +122,7 @@ private:
     // ── Content methods (ServiceEngine+Content.cpp) ──
     void startContentIndexing();
     void setupContentPersistence();
+    std::string contentConfigPath() const;
     void updateContentForPath(const std::string& fullPath, bool removed,
                               std::shared_ptr<SearchEngine> engine);
 

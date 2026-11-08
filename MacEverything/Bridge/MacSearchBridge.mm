@@ -247,10 +247,7 @@
     callbacks.onSetContentConfig = [weakSelf](const std::vector<std::string>& exts, uint64_t maxSize) {
         MacSearchBridge *strongSelf = weakSelf;
         if (!strongSelf) return;
-        auto ci = strongSelf->_serviceEngine->safeContentIndex();
-        if (!ci) return;
-        ci->setExtensions(exts);
-        ci->setMaxFileSize(maxSize);
+        strongSelf->_serviceEngine->setContentConfig(exts, maxSize);
     };
 
     callbacks.onGetContentExtensions = [weakSelf]() -> std::vector<std::string> {
