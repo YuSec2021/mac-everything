@@ -17,6 +17,10 @@ ServiceEngine::ServiceEngine(const ServiceConfig& config)
     engine_ = std::make_shared<SearchEngine>();
     watcher_ = std::make_shared<FileSystemWatcher>("live");
     contentIndex_ = std::make_shared<ContentIndex>();
+    if (contentIndex_->loadConfig(contentConfigPath())) {
+        LOG_INFO("ServiceEngine", "Loaded content settings: "
+                 << contentIndex_->getExtensions().size() << " extensions");
+    }
     mutationQueue_ = dispatch_queue_create("com.maceverything.mutation", DISPATCH_QUEUE_SERIAL);
     backgroundGroup_ = dispatch_group_create();
     contentIndexingSemaphore_ = dispatch_semaphore_create(0);

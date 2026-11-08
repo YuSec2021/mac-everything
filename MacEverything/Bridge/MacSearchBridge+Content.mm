@@ -88,13 +88,13 @@
     for (NSString *ext in extensions) {
         exts.push_back(std::string([ext UTF8String]));
     }
-    contentIndex->setExtensions(exts);
+    _serviceEngine->setContentConfig(exts, contentIndex->getMaxFileSize());
 }
 
 - (void)setContentMaxFileSize:(uint64_t)bytes {
     auto contentIndex = _serviceEngine->safeContentIndex();
     if (contentIndex) {
-        contentIndex->setMaxFileSize(bytes);
+        _serviceEngine->setContentConfig(contentIndex->getExtensions(), bytes);
     }
 }
 

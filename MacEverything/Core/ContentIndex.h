@@ -76,6 +76,13 @@ public:
     /// Load the content index from a binary file.
     bool loadFromFile(const std::string& path);
 
+    /// Save the settings (max file size, then one extension per line) as text.
+    bool saveConfig(const std::string& path) const;
+
+    /// Load settings written by saveConfig. Leaves the current settings unchanged and
+    /// returns false if the file is missing or malformed.
+    bool loadConfig(const std::string& path);
+
     // --- Stats ---
 
     /// Number of indexed files.
