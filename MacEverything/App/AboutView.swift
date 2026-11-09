@@ -44,7 +44,7 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("版本说明 / Version notes")
                     .font(.headline)
-                Text("1.4.0：应用常驻菜单栏，搜索面板改为液态玻璃风格，支持分页结果、快捷键冲突检查、Quick Look 和 Finder 定位。\n\n搜索界面改用 Observation 和原生列表操作，修复 ⌘ 点击定位 Finder；PR 自动构建 Apple Silicon 和 Intel 版本。\n\n此后修复：内容搜索的扩展名和文件大小上限设置会保存，重启后不再丢失；索引压缩同时触发时不再误删几乎全部记录。")
+                Text("1.4.0：应用常驻菜单栏，搜索面板改为液态玻璃风格，支持分页结果、快捷键冲突检查、Quick Look 和 Finder 定位。\n\n搜索界面改用 Observation 和原生列表操作，修复 ⌘ 点击定位 Finder；PR 自动构建 Apple Silicon 和 Intel 版本。\n\n此后修复：内容搜索的扩展名和文件大小上限设置会保存，重启后不再丢失；索引压缩同时触发时不再误删几乎全部记录。\n\nMCP 集成：修复 Claude Code 配置写错文件（需重新启用一次），新增 Codex；配置文件解析失败时不再覆盖并提示错误；MCP 正确解码转义的查询，HTTP 错误会标记为工具错误。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -75,8 +75,94 @@ static std::string urlEncode(const std::string& s) {
     return out;
 }
 
+static void appendUtf8(std::string& out, uint32_t cp) {
+    if (cp < 0x80) {
+        out += static_cast<char>(cp);
+    } else if (cp < 0x800) {
+        out += static_cast<char>(0xC0 | (cp >> 6));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else if (cp < 0x10000) {
+        out += static_cast<char>(0xE0 | (cp >> 12));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    } else {
+        out += static_cast<char>(0xF0 | (cp >> 18));
+        out += static_cast<char>(0x80 | ((cp >> 12) & 0x3F));
+        out += static_cast<char>(0x80 | ((cp >> 6) & 0x3F));
+        out += static_cast<char>(0x80 | (cp & 0x3F));
+    }
+}
+
+/// Read the 4 hex digits of a \uXXXX escape starting at pos.
+static bool parseHex4(const std::string& s, size_t pos, uint32_t& value) {
+    if (pos + 4 > s.size()) return false;
+    value = 0;
+    for (size_t i = pos; i < pos + 4; i++) {
+        char c = s[i];
+        uint32_t digit;
+        if (c >= '0' && c <= '9') digit = c - '0';
+        else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+        else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+        else return false;
+        value = (value << 4) | digit;
+    }
+    return true;
+}
+
+/// Decode the escape sequences of a JSON string body (without the quotes).
+/// Unpaired surrogates become U+FFFD; malformed escapes are kept as written.
+static std::string jsonUnescape(const std::string& s) {
+    static constexpr uint32_t kReplacementChar = 0xFFFD;
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size(); i++) {
+        if (s[i] != '\\' || i + 1 >= s.size()) {
+            out += s[i];
+            continue;
+        }
+        char esc = s[++i];
+        switch (esc) {
+            case '"':  out += '"';  break;
+            case '\\': out += '\\'; break;
+            case '/':  out += '/';  break;
+            case 'b':  out += '\b'; break;
+            case 'f':  out += '\f'; break;
+            case 'n':  out += '\n'; break;
+            case 'r':  out += '\r'; break;
+            case 't':  out += '\t'; break;
+            case 'u': {
+                uint32_t cp;
+                if (!parseHex4(s, i + 1, cp)) {
+                    out += "\\u";
+                    break;
+                }
+                i += 4;
+                if (cp >= 0xD800 && cp <= 0xDBFF) {
+                    uint32_t low;
+                    if (i + 2 < s.size() && s[i + 1] == '\\' && s[i + 2] == 'u' &&
+                        parseHex4(s, i + 3, low) && low >= 0xDC00 && low <= 0xDFFF) {
+                        cp = 0x10000 + ((cp - 0xD800) << 10) + (low - 0xDC00);
+                        i += 6;
+                    } else {
+                        cp = kReplacementChar;
+                    }
+                } else if (cp >= 0xDC00 && cp <= 0xDFFF) {
+                    cp = kReplacementChar;
+                }
+                appendUtf8(out, cp);
+                break;
+            }
+            default:
+                out += '\\';
+                out += esc;
+                break;
+        }
+    }
+    return out;
+}
+
 /// Extract a string value for a given key from a JSON object string.
-/// Returns empty string if not found.
+/// Returns the decoded value, or empty string if not found.
 static std::string jsonGetString(const std::string& json, const std::string& key) {
     std::string needle = "\"" + key + "\"";
     auto pos = json.find(needle);
@@ -99,7 +185,7 @@ static std::string jsonGetString(const std::string& json, const std::string& key
             if (json[end] == '"') break;
             end++;
         }
-        return json.substr(start, end - start);
+        return jsonUnescape(json.substr(start, end - start));
     }
     return "";
 }
@@ -324,46 +410,51 @@ static std::string toolDefinitions() {
 //  Tool handlers
 // ═══════════════════════════════════════════════════════
 
-static std::string handleSearchFiles(const std::string& args) {
+struct ToolOutcome {
+    std::string text;
+    bool isError = false;
+};
+
+static ToolOutcome outcomeFromHttp(const HttpResponse& resp) {
+    if (resp.ok) return {resp.body, false};
+    if (resp.statusCode != 0 && resp.body.empty()) {
+        return {"MacEverything returned HTTP " + std::to_string(resp.statusCode), true};
+    }
+    return {resp.body, true};
+}
+
+static ToolOutcome handleSearchFiles(const std::string& args) {
     std::string query = jsonGetString(args, "query");
-    if (query.empty()) return "Error: missing required parameter 'query'";
+    if (query.empty()) return {"Error: missing required parameter 'query'"};
 
     long limit = jsonGetNumber(args, "limit");
     std::string path = "/api/search?q=" + urlEncode(query);
     if (limit > 0) path += "&limit=" + std::to_string(limit);
 
-    auto resp = httpGet(path);
-    if (!resp.ok) return resp.body;
-    return resp.body;
+    return outcomeFromHttp(httpGet(path));
 }
 
-static std::string handleSearchContent(const std::string& args) {
+static ToolOutcome handleSearchContent(const std::string& args) {
     std::string query = jsonGetString(args, "query");
-    if (query.empty()) return "Error: missing required parameter 'query'";
+    if (query.empty()) return {"Error: missing required parameter 'query'"};
 
     long limit = jsonGetNumber(args, "limit");
     std::string path = "/api/search/content?q=" + urlEncode(query);
     if (limit > 0) path += "&limit=" + std::to_string(limit);
 
-    auto resp = httpGet(path);
-    if (!resp.ok) return resp.body;
-    return resp.body;
+    return outcomeFromHttp(httpGet(path));
 }
 
-static std::string handleRecentFiles(const std::string& args) {
+static ToolOutcome handleRecentFiles(const std::string& args) {
     long limit = jsonGetNumber(args, "limit");
     std::string path = "/api/recent";
     if (limit > 0) path += "?limit=" + std::to_string(limit);
 
-    auto resp = httpGet(path);
-    if (!resp.ok) return resp.body;
-    return resp.body;
+    return outcomeFromHttp(httpGet(path));
 }
 
-static std::string handleIndexStatus() {
-    auto resp = httpGet("/api/status");
-    if (!resp.ok) return resp.body;
-    return resp.body;
+static ToolOutcome handleIndexStatus() {
+    return outcomeFromHttp(httpGet("/api/status"));
 }
 
 // ═══════════════════════════════════════════════════════
@@ -416,30 +507,21 @@ static void handleRequest(const std::string& json) {
         std::string args = params.empty() ? "{}" : jsonGetRaw(params, "arguments");
         if (args.empty()) args = "{}";
 
-        std::string resultText;
-        bool isError = false;
+        ToolOutcome outcome;
 
         if (toolName == "search_files") {
-            resultText = handleSearchFiles(args);
+            outcome = handleSearchFiles(args);
         } else if (toolName == "search_content") {
-            resultText = handleSearchContent(args);
+            outcome = handleSearchContent(args);
         } else if (toolName == "recent_files") {
-            resultText = handleRecentFiles(args);
+            outcome = handleRecentFiles(args);
         } else if (toolName == "index_status") {
-            resultText = handleIndexStatus();
+            outcome = handleIndexStatus();
         } else {
-            resultText = "Unknown tool: " + toolName;
-            isError = true;
+            outcome = {"Unknown tool: " + toolName, true};
         }
 
-        // Check if result looks like an HTTP error
-        if (resultText.find("Cannot connect") != std::string::npos ||
-            resultText.find("Failed to create socket") != std::string::npos ||
-            resultText.find("Empty response") != std::string::npos) {
-            isError = true;
-        }
-
-        sendToolResult(id, resultText, isError);
+        sendToolResult(id, outcome.text, outcome.isError);
         return;
     }
 
