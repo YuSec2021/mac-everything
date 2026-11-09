@@ -246,6 +246,67 @@ static bool runPart40() {
         fs::remove_all(base);
     }
 
+    // Rebuild Index: a damaged cache must be thrown away, not loaded again.
+    {
+        const std::string rebuildCache = (tmpBase / "cache_rebuild").string();
+        fs::create_directories(rebuildCache);
+        {
+            SearchEngine damaged;
+            FileRecord rec;
+            rec.name = "only_stale_record.txt";
+            rec.path = tmpBase.string();
+            rec.type = 1;
+            damaged.addRecord(std::move(rec));
+            IndexMetadata meta;
+            meta.lastEventId = FSEventsGetCurrentEventId();
+            check(FlatIndexWriter(rebuildCache + "/index.v6").fullRewrite(damaged, meta),
+                  "Rebuild: damaged cache written");
+        }
+
+        ServiceConfig config;
+        config.scanRoot = tmpBase.string();
+        config.cachePath = rebuildCache;
+        config.logPath = (tmpBase / "logs").string();
+
+        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+        uint32_t count = 0;
+        bool fullScan = false;
+        ServiceEngine::StartupCallback done = [&](uint32_t c, bool full) {
+            count = c;
+            fullScan = full;
+            dispatch_semaphore_signal(sem);
+        };
+        auto finished = [&] {
+            return dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 30 * NSEC_PER_SEC)) == 0;
+        };
+
+        auto se = std::make_unique<ServiceEngine>(config);
+        se->startIncremental(done);
+        check(finished() && !fullScan, "Rebuild: startup loads the damaged cache");
+        for (int i = 0; i < 1500 && se->isSyncing(); i++) usleep(10000);
+        check(!se->isSyncing() && !se->safeEngine()->query("only_stale_record", 10).empty(),
+              "Rebuild: damaged cache is what the engine serves before the rebuild");
+        { std::ofstream f(rebuildCache + "/content_index.bin"); f << "stale"; }
+
+        check(se->rebuildIndex(done), "Rebuild: starts when the engine is idle");
+        check(!se->rebuildIndex([](uint32_t, bool) {}), "Rebuild: a second request is refused while the first runs");
+        check(finished() && fullScan && count >= 4, "Rebuild: runs a full scan");
+        check(se->safeEngine()->query("only_stale_record", 10).empty(), "Rebuild: damaged records are gone");
+        check(!se->safeEngine()->query("hello", 10).empty(), "Rebuild: files on disk are indexed");
+        check(se->safePersistence() != nullptr, "Rebuild: new persistence is attached");
+        check(!fs::exists(rebuildCache + "/content_index.bin"), "Rebuild: content cache is discarded");
+        se->shutdown();
+        se.reset();
+
+        auto restarted = std::make_unique<ServiceEngine>(config);
+        restarted->startIncremental(done);
+        check(finished() && count >= 4, "Rebuild: restart completes");
+        check(restarted->safeEngine()->query("only_stale_record", 10).empty() &&
+              !restarted->safeEngine()->query("hello", 10).empty(),
+              "Rebuild: damaged records stay gone after a restart");
+        restarted->shutdown();
+    }
+
     // Clean up
     fs::remove_all(tmpBase);
 
