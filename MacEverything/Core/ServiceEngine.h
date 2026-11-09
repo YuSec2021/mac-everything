@@ -45,6 +45,9 @@ public:
     // ── Lifecycle ──
     void startFullScan(StartupCallback completion);
     void startIncremental(StartupCallback completion);
+    /// Discards every cached index and rebuilds from a full scan. Returns false, and
+    /// changes nothing, while a scan or startup sync is running.
+    bool rebuildIndex(StartupCallback completion);
     void shutdown();
 
     // ── HTTP ──
@@ -122,6 +125,7 @@ private:
     // ── Content methods (ServiceEngine+Content.cpp) ──
     void startContentIndexing();
     void setupContentPersistence();
+    void discardContentIndex();
     std::string contentConfigPath() const;
     void updateContentForPath(const std::string& fullPath, bool removed,
                               std::shared_ptr<SearchEngine> engine);

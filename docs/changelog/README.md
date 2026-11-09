@@ -6,6 +6,7 @@
 
 ## 最新更新
 
+- [155：Rebuild Index 丢弃全部索引缓存并完整扫描](155-rebuild-index-discards-v6.md)：重建现在由引擎执行，先停掉旧持久化再删除 `index.v6` 等缓存，损坏的索引可以恢复；`POST /api/index/rebuild` 在 App 中生效。
 - [154：修复 MCP 客户端注册并新增 Codex](154-mcp-client-registration.md)：Claude Code 改写入 `~/.claude.json`，配置解析失败时不再覆盖原文件并提示，新增 Codex；MCP Server 解码 JSON 转义，HTTP 错误标记为工具错误。
 - [153：索引压缩同时触发时不再误删几乎全部记录](153-overlapping-compaction-index-loss.md)：重叠压缩改为互斥，并在重新加载后放弃过期压缩；已损坏的本地索引需执行一次 Rebuild Index。
 - [152：内容搜索设置在重启后保留](152-persist-content-settings.md)：扩展名列表和文件大小上限写入缓存目录，重启后自动恢复，`infile:` 不再失效。
@@ -183,19 +184,20 @@
 | [152](152-persist-content-settings.md) | bugfix | 内容搜索设置在重启后保留 | 2026-11-09 |
 | [153](153-overlapping-compaction-index-loss.md) | bugfix | 索引压缩同时触发时不再误删几乎全部记录 | 2026-11-09 |
 | [154](154-mcp-client-registration.md) | bugfix | 修复 MCP 客户端注册并新增 Codex | 2026-11-09 |
+| [155](155-rebuild-index-discards-v6.md) | bugfix | Rebuild Index 丢弃全部索引缓存并完整扫描 | 2026-11-09 |
 
 ## 统计
 
 | 类型 | 数量 |
 |------|------|
-| bugfix | 56 |
+| bugfix | 57 |
 | feature | 34 |
 | performance | 39 |
 | refactor | 17 |
 | test | 7 |
 | docs | 6 |
 | chore | 2 |
-| **合计** | **161 条 (154 个编号, 7 组重复编号各 2 条)** |
+| **合计** | **162 条 (155 个编号, 7 组重复编号各 2 条)** |
 
 ---
 
