@@ -170,7 +170,8 @@ struct ContentView: View {
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
-                    .background(ListSelectionHighlightRemover())
+                    .background(ResultListPresentation(query: viewModel.presentedQuery, revision: viewModel.resultRevision,
+                                                       hasSelection: viewModel.selectedResultID != nil))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .modifier(ResultListKeys(proxy: proxy, isFocused: $isResultsFocused, onExitTop: focusSearchField))
@@ -205,7 +206,8 @@ struct ContentView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .background(ListSelectionHighlightRemover())
+                .background(ResultListPresentation(query: viewModel.presentedQuery, revision: viewModel.resultRevision,
+                                                   hasSelection: viewModel.selectedResultID != nil))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .modifier(ResultListKeys(proxy: proxy, isFocused: $isResultsFocused, onExitTop: focusSearchField))
@@ -286,39 +288,6 @@ private struct GlassHeaderLabelStyle: LabelStyle {
     }
 }
 
-/// Turns off the result tables' native selection highlight so rows can draw their own
-/// glass selection. Selection itself, keyboard navigation and the primary action still
-/// come from the List.
-private struct ListSelectionHighlightRemover: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView { Probe() }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        (nsView as? Probe)?.removeHighlights()
-    }
-
-    private final class Probe: NSView {
-        override func viewDidMoveToWindow() {
-            super.viewDidMoveToWindow()
-            removeHighlights()
-        }
-
-        /// Deferred a turn so the List's table is in the window by the time we look.
-        func removeHighlights() {
-            DispatchQueue.main.async { [weak self] in
-                guard let root = self?.window?.contentView else { return }
-                for table in Self.tables(in: root) where table.selectionHighlightStyle != .none {
-                    table.selectionHighlightStyle = .none
-                }
-            }
-        }
-
-        private static func tables(in view: NSView) -> [NSTableView] {
-            if let table = view as? NSTableView { return [table] }
-            return view.subviews.flatMap(tables(in:))
-        }
-    }
-}
-
 /// Its own view so index, sync and timing updates redraw only this bar, not the results.
 private struct ResultsStatusBar: View {
     private let viewModel = SearchViewModel.shared
@@ -372,6 +341,11 @@ private struct ResultListKeys: ViewModifier {
     var isFocused: FocusState<Bool>.Binding
     let onExitTop: () -> Void
 
+    private struct ScrollTarget: Hashable {
+        let query: String
+        let selection: String?
+    }
+
     func body(content: Content) -> some View {
         content
             .contextMenu(forSelectionType: String.self) { ids in
@@ -408,8 +382,10 @@ private struct ResultListKeys: ViewModifier {
                 onExitTop()
                 return .handled
             }
-            .onChange(of: viewModel.selectedResultID) {
-                // Keeps the row visible when the selection moves from the Quick Look panel.
+            .task(id: ScrollTarget(query: viewModel.presentedQuery, selection: viewModel.selectedResultID)) {
+                // Let List apply its row update before scrolling to a retained/new selection.
+                await Task.yield()
+                guard !Task.isCancelled else { return }
                 if let id = viewModel.selectedResultID { proxy.scrollTo(id) }
             }
     }

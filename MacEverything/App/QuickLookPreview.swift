@@ -12,6 +12,9 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
 
     private let viewModel = SearchViewModel.shared
     private var previewURL: URL?
+    private var originalLevel: NSWindow.Level?
+    /// Resolve the actual search surface rather than a key window that may be Quick Look.
+    var searchWindow: (() -> NSWindow?)?
     /// Told when the preview opens (true) and closes (false), so the transient menu bar
     /// popover can stay open while the panel is in front of it.
     var onVisibilityChange: ((Bool) -> Void)?
@@ -27,7 +30,14 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
             // orderFront rather than makeKey: the result list keeps keyboard focus, so ↑/↓
             // keep moving the selection.
             onVisibilityChange?(true)
-            QLPreviewPanel.shared().orderFront(nil)
+            let panel = QLPreviewPanel.shared()!
+            let previousLevel = panel.level
+            panel.orderFront(nil)
+            // Quick Look configures its own level while ordering in. Apply ours after it.
+            originalLevel = previousLevel
+            if let window = searchWindow?() {
+                panel.level = NSWindow.Level(rawValue: max(panel.level.rawValue, window.level.rawValue + 1))
+            }
         } else {
             NSSound.beep()
         }
@@ -35,7 +45,9 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
 
     func close() {
         guard isVisible else { return }
-        QLPreviewPanel.shared().orderOut(nil)
+        let panel = QLPreviewPanel.shared()!
+        panel.orderOut(nil)
+        restorePresentation(panel)
     }
 
     // MARK: - Panel control (forwarded from AppDelegate)
@@ -52,7 +64,22 @@ final class QuickLookPreview: NSObject, QLPreviewPanelDataSource, QLPreviewPanel
         previewURL = nil
         panel.dataSource = nil
         panel.delegate = nil
+        restorePresentation(panel)
+    }
+
+    private func restorePresentation(_ panel: QLPreviewPanel) {
+        if let originalLevel {
+            panel.level = originalLevel
+            self.originalLevel = nil
+        }
         onVisibilityChange?(false)
+    }
+
+    nonisolated func windowWillClose(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            guard let panel = notification.object as? QLPreviewPanel else { return }
+            restorePresentation(panel)
+        }
     }
 
     private func selectionChanged() {

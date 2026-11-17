@@ -28,6 +28,9 @@ final class SearchViewModel {
     static let shared = SearchViewModel()
     var searchText: String = ""
     private(set) var displayItems: [FileItem] = []
+    /// Presentation changes include same-sized result replacements and pagination.
+    private(set) var resultRevision: UInt64 = 0
+    private(set) var presentedQuery: String = ""
     var totalMatches: Int = 0
     var isScanning: Bool = false
     var scanComplete: Bool = false
@@ -311,6 +314,7 @@ final class SearchViewModel {
                 guard let self, self.searchGeneration == gen else { return }
                 self.resultSnapshot = snapshot
                 self.loadedCount = min(snapshot.count, pageSize)
+                self.presentedQuery = keyword
                 self.setDisplayItems(items)
                 self.dropStaleSelection()
                 self.totalMatches = snapshot.count
@@ -342,6 +346,7 @@ final class SearchViewModel {
 
             await MainActor.run { [weak self] in
                 guard let self, self.searchGeneration == gen else { return }
+                self.presentedQuery = "infile:" + keyword
                 self.setContentResults(items)
                 self.dropStaleSelection()
                 self.totalMatches = items.count
@@ -433,17 +438,20 @@ final class SearchViewModel {
     private func setDisplayItems(_ items: [FileItem]) {
         displayItems = items
         if !isContentSearch { rebuildResultIndex() }
+        resultRevision &+= 1
     }
 
     private func appendDisplayItems(_ items: [FileItem]) {
         let start = displayItems.count
         displayItems.append(contentsOf: items)
         for (offset, item) in items.enumerated() { resultIndexByID[item.id] = start + offset }
+        resultRevision &+= 1
     }
 
     private func setContentResults(_ items: [ContentFileItem]) {
         contentResults = items
         if isContentSearch { rebuildResultIndex() }
+        resultRevision &+= 1
     }
 
     private func rebuildResultIndex() {

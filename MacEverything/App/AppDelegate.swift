@@ -26,6 +26,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopoverDel
             QuickLookPreview.shared.onVisibilityChange = { [weak self] visible in
                 self?.searchPopover?.behavior = visible ? .applicationDefined : .transient
             }
+            QuickLookPreview.shared.searchWindow = { [weak self] in self?.visibleSearchWindow }
         }
         hotkeyManager = HotkeyManager.shared
         hotkeyManager?.onPressed = { [weak self] in self?.handleHotkey() }

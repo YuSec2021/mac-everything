@@ -225,7 +225,12 @@ struct HighlightedSearchField: NSViewRepresentable {
         // Update text if externally changed (e.g., clear button, ghost suggestion accept)
         if textView.string != text {
             context.coordinator.isUpdatingFromSwiftUI = true
-            let selectedRanges = textView.selectedRanges
+            let selectedRanges = textView.selectedRanges.map { value -> NSValue in
+                let range = value.rangeValue
+                let location = min(range.location, text.utf16.count)
+                return NSValue(range: NSRange(location: location,
+                                              length: min(range.length, text.utf16.count - location)))
+            }
             textView.string = text
             context.coordinator.applyHighlighting(textView)
             textView.selectedRanges = selectedRanges
@@ -273,7 +278,13 @@ struct HighlightedSearchField: NSViewRepresentable {
         }
 
         func handleTab() -> Bool {
-            return parent.onTab?() ?? false
+            guard let textView, !textView.hasMarkedText(), parent.onTab?() == true else { return false }
+            // Commit before the next key event. Waiting for updateNSView restores the old
+            // insertion point and can put immediately typed characters inside the prefix.
+            // NSTextView's editing path also preserves undo and uses UTF-16 selection offsets.
+            textView.insertText(parent.text, replacementRange: NSRange(location: 0, length: textView.string.utf16.count))
+            textView.scrollRangeToVisible(textView.selectedRange())
+            return true
         }
 
         func handleDownArrow() -> Bool {

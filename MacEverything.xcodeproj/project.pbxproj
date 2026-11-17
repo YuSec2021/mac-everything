@@ -18,6 +18,7 @@
 		A1000006 /* PermissionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000006; };
 		A1000007 /* HotkeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000007; };
 		E7Q10001 /* QuickLookPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7Q20001; };
+		E7Q10002 /* ResultListPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = E7Q20002; };
 		A1000008 /* MacSearchBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = A2000009; };
 		A1000009 /* DirectoryScanner.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A200000B; };
 		A100000A /* SearchEngine.cpp in Sources */ = {isa = PBXBuildFile; fileRef = A200000D; };
@@ -90,6 +91,7 @@
 		A2000006 /* PermissionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionView.swift; sourceTree = "<group>"; };
 		A2000007 /* HotkeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotkeyManager.swift; sourceTree = "<group>"; };
 		E7Q20001 /* QuickLookPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookPreview.swift; sourceTree = "<group>"; };
+		E7Q20002 /* ResultListPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResultListPresentation.swift; sourceTree = "<group>"; };
 		A2000008 /* MacSearchBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSearchBridge.h; sourceTree = "<group>"; };
 		A2000009 /* MacSearchBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = MacSearchBridge.mm; sourceTree = "<group>"; };
 		A200000A /* DirectoryScanner.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = DirectoryScanner.h; sourceTree = "<group>"; };
@@ -268,6 +270,7 @@
 				A2000006 /* PermissionView.swift */,
 				A2000007 /* HotkeyManager.swift */,
 				E7Q20001 /* QuickLookPreview.swift */,
+				E7Q20002 /* ResultListPresentation.swift */,
 				A200001A /* ShortcutSettingsView.swift */,
 				A200001F /* ContentResultRow.swift */,
 				A2000020 /* ContentSettingsView.swift */,
@@ -464,6 +467,7 @@
 				A1000006 /* PermissionView.swift in Sources */,
 				A1000007 /* HotkeyManager.swift in Sources */,
 				E7Q10001 /* QuickLookPreview.swift in Sources */,
+				E7Q10002 /* ResultListPresentation.swift in Sources */,
 				A1000008 /* MacSearchBridge.mm in Sources */,
 				A1000009 /* DirectoryScanner.cpp in Sources */,
 				A100000A /* SearchEngine.cpp in Sources */,

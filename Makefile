@@ -36,6 +36,14 @@ test-bridge-snapshot:
 		MacEverything/Bridge/MacSearchBridge+Content.mm $(CORE_SRCS) -o /tmp/maceverything-query-snapshot-test
 	/tmp/maceverything-query-snapshot-test
 
+.PHONY: test-search-ui
+test-search-ui:
+	DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc -parse-as-library \
+		MacEverything/App/HighlightedSearchField.swift MacEverything/App/ResultListPresentation.swift \
+		MacEverything/App/QuickLookPreview.swift tests/test_search_ui.swift \
+		-o /tmp/maceverything-search-ui-test
+	/tmp/maceverything-search-ui-test
+
 # === Sanitizer targets ===
 test-asan: test_all.cpp $(CORE_SRCS)
 	$(CXX) -std=c++20 -O1 -g -fsanitize=address -fno-omit-frame-pointer $(RE2_CFLAGS) $(FRAMEWORKS) $(RE2_LDFLAGS) -IMacEverything/Core $^ -o test_all_asan
