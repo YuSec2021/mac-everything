@@ -39,4 +39,18 @@ inline std::string getOSVersionString() {
     return "unknown";
 }
 
+/// Returns true if `path` is macOS's APFS Data volume mountpoint
+/// (`/System/Volumes/Data`) or any path beneath it.
+/// On macOS Catalina+, the Data volume shares `st_dev` with `/` while its
+/// user-visible directories are already unified into `/` via APFS firmlinks,
+/// so scanning or watching `/System/Volumes/Data` duplicates records alongside
+/// `/Users`, `/Applications`, `/Library`, etc.
+inline bool isAPFSDataVolumePath(const std::string& path) {
+    static constexpr const char kDataVolume[] = "/System/Volumes/Data";
+    static constexpr size_t kLen = sizeof(kDataVolume) - 1;
+    if (path.size() < kLen) return false;
+    if (path.compare(0, kLen, kDataVolume) != 0) return false;
+    return path.size() == kLen || path[kLen] == '/';
+}
+
 } // namespace PathUtils

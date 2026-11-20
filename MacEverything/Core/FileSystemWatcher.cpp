@@ -1,4 +1,5 @@
 #include "FileSystemWatcher.h"
+#include "PathUtils.h"
 #include "Logger.h"
 #include <cstring>
 
@@ -155,7 +156,8 @@ void FileSystemWatcher::fseventsCallback(
 
         std::string pathStr(pathBuf);
 
-        // Filter out noisy system paths
+        // Filter out noisy system paths and APFS Data volume duplicates
+        if (PathUtils::isAPFSDataVolumePath(pathStr)) continue;
         if (pathStr.find("/.Spotlight-V100/") != std::string::npos) continue;
         if (pathStr.find("/.fseventsd/") != std::string::npos) continue;
         if (pathStr.find("/.Trashes/") != std::string::npos) continue;

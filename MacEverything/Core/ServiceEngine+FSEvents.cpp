@@ -1,5 +1,6 @@
 #include "ServiceEngine.h"
 #include "DirectoryScanner.h"
+#include "PathUtils.h"
 #include "RescanDebounce.h"
 #include "Logger.h"
 #include <sys/stat.h>
@@ -52,6 +53,7 @@ bool ServiceEngine::collectFSEventMutations(const std::vector<FileSystemWatcher:
         FSEventStreamEventFlags flags = event.flags;
 
         if (isInsideAppBundle(path)) continue;
+        if (PathUtils::isAPFSDataVolumePath(path)) continue;
 
         if (honorMustScanSubDirs && (flags & kFSEventStreamEventFlagMustScanSubDirs)) {
             out.rescanDirs.push_back(path);
@@ -316,8 +318,9 @@ void ServiceEngine::flushPendingRescans() {
 
 void ServiceEngine::rescanDirectoryInto(SearchEngine& engine, const std::string& dir) {
     // An empty prefix matches every record: replacing it would empty the index.
-    if (dir.empty()) {
-        LOG_WARN("FSWatcher", "Ignoring rescan of an empty path");
+    // Also skip macOS's APFS Data volume mountpoint to prevent duplicate paths.
+    if (dir.empty() || PathUtils::isAPFSDataVolumePath(dir)) {
+        LOG_WARN("FSWatcher", "Ignoring rescan of path: " << dir);
         return;
     }
     DirectoryScanner scanner;

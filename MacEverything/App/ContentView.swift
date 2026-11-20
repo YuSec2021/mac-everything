@@ -339,7 +339,7 @@ private struct ResultsStatusBar: View {
             }
             if viewModel.scanComplete {
                 if viewModel.isMonitoring || viewModel.isSyncing { Text("·").opacity(0.5) }
-                Text("\(viewModel.totalRecords.formatted()) files indexed")
+                Text("\(viewModel.totalRecords.formatted()) items indexed")
                     .accessibilityIdentifier("indexedCount")
             }
             if viewModel.isContentIndexing, let progress = viewModel.contentIndexProgress {

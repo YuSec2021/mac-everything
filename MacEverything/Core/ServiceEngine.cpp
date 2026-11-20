@@ -233,7 +233,12 @@ void ServiceEngine::startIncremental(StartupCallback completion) {
                 });
             }
 
-            this->backgroundSyncEngine(engine, sharedPersistence, lastEventId, incrementalStart, indexLoadDone);
+            bool needsDataVolumeCleanup =
+                !PathUtils::isAPFSDataVolumePath(config_.scanRoot) &&
+                engine->hasPathPrefix("/System/Volumes/Data");
+            this->backgroundSyncEngine(engine, sharedPersistence, lastEventId,
+                                       incrementalStart, indexLoadDone,
+                                       needsDataVolumeCleanup);
             return;
         }
 
@@ -280,61 +285,65 @@ void ServiceEngine::backgroundSyncEngine(
     std::shared_ptr<IndexPersistence> sharedPersistence,
     uint64_t lastEventId,
     std::chrono::steady_clock::time_point incrementalStart,
-    std::chrono::steady_clock::time_point indexLoadDone)
+    std::chrono::steady_clock::time_point indexLoadDone,
+    bool forceFullRescan)
 {
     dispatch_group_async(backgroundGroup_, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
-        // Try FSEvents replay
-        auto replayDone = std::make_shared<std::atomic<bool>>(false);
-        auto journalTruncated = std::make_shared<std::atomic<bool>>(false);
+        if (!forceFullRescan) {
+            // Try FSEvents replay
+            auto replayDone = std::make_shared<std::atomic<bool>>(false);
+            auto journalTruncated = std::make_shared<std::atomic<bool>>(false);
 
-        auto watcherForReplay = std::make_unique<FileSystemWatcher>("replay");
-        auto* watcherPtr = watcherForReplay.get();
+            auto watcherForReplay = std::make_unique<FileSystemWatcher>("replay");
+            auto* watcherPtr = watcherForReplay.get();
 
-        dispatch_semaphore_t sem = dispatch_semaphore_create(0);
+            dispatch_semaphore_t sem = dispatch_semaphore_create(0);
 
-        watcherPtr->start(
-            config_.scanRoot,
-            lastEventId,
-            [this, engine](std::vector<FileSystemWatcher::Event> events) {
-                this->applyFSEvents(events, engine);
-            },
-            [replayDone, journalTruncated, watcherPtr, sem] {
-                replayDone->store(true);
-                journalTruncated->store(watcherPtr->isJournalTruncated());
-                dispatch_semaphore_signal(sem);
+            watcherPtr->start(
+                config_.scanRoot,
+                lastEventId,
+                [this, engine](std::vector<FileSystemWatcher::Event> events) {
+                    this->applyFSEvents(events, engine);
+                },
+                [replayDone, journalTruncated, watcherPtr, sem] {
+                    replayDone->store(true);
+                    journalTruncated->store(watcherPtr->isJournalTruncated());
+                    dispatch_semaphore_signal(sem);
+                }
+            );
+
+            long result = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
+            watcherForReplay->stop();
+
+            if (result == 0 && replayDone->load() && !journalTruncated->load()) {
+                // Replay succeeded
+                auto now = std::chrono::steady_clock::now();
+                auto loadTime = std::chrono::duration<double>(indexLoadDone - incrementalStart).count();
+                auto replayTime = std::chrono::duration<double>(now - indexLoadDone).count();
+                auto totalTime = std::chrono::duration<double>(now - incrementalStart).count();
+                LOG_INFO("ServiceEngine", "Incremental startup completed: "
+                         << engine->liveRecordCount() << " records — "
+                         << "index load " << loadTime << "s, "
+                         << "FSEvents replay " << replayTime << "s, "
+                         << "total " << totalTime << "s");
+
+                this->startMonitoring();
+                sharedPersistence->startAutoCompaction(300.0, this->watcher_);
+                this->isSyncing_.store(false, std::memory_order_relaxed);
+
+                dispatch_group_async(this->backgroundGroup_, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+                    if (this->shuttingDown_.load(std::memory_order_acquire)) return;
+                    this->setupContentPersistence();
+                    this->startContentIndexing();
+                });
+                if (this->onIndexChanged) this->onIndexChanged();
+                return;
             }
-        );
 
-        long result = dispatch_semaphore_wait(sem, dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_SEC));
-        watcherForReplay->stop();
-
-        if (result == 0 && replayDone->load() && !journalTruncated->load()) {
-            // Replay succeeded
-            auto now = std::chrono::steady_clock::now();
-            auto loadTime = std::chrono::duration<double>(indexLoadDone - incrementalStart).count();
-            auto replayTime = std::chrono::duration<double>(now - indexLoadDone).count();
-            auto totalTime = std::chrono::duration<double>(now - incrementalStart).count();
-            LOG_INFO("ServiceEngine", "Incremental startup completed: "
-                     << engine->liveRecordCount() << " records — "
-                     << "index load " << loadTime << "s, "
-                     << "FSEvents replay " << replayTime << "s, "
-                     << "total " << totalTime << "s");
-
-            this->startMonitoring();
-            sharedPersistence->startAutoCompaction(300.0, this->watcher_);
-            this->isSyncing_.store(false, std::memory_order_relaxed);
-
-            dispatch_group_async(this->backgroundGroup_, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-                if (this->shuttingDown_.load(std::memory_order_acquire)) return;
-                this->setupContentPersistence();
-                this->startContentIndexing();
-            });
-            if (this->onIndexChanged) this->onIndexChanged();
-            return;
+            LOG_WARN("ServiceEngine", "FSEvents replay failed — background full scan");
+        } else {
+            LOG_INFO("ServiceEngine", "Cached index contains /System/Volumes/Data duplicates — scheduling background full rescan");
         }
-
-        // Replay failed: background full scan
-        LOG_WARN("ServiceEngine", "FSEvents replay failed — background full scan");
 
         auto scanner = std::make_shared<DirectoryScanner>();
 
