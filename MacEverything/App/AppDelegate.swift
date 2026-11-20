@@ -26,6 +26,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopoverDel
             QuickLookPreview.shared.onVisibilityChange = { [weak self] visible in
                 self?.searchPopover?.behavior = visible ? .applicationDefined : .transient
             }
+            ReleaseUpdateManager.shared.logHandler = { AppLogger.warn("Update", $0) }
+            ReleaseUpdateManager.shared.checkForUpdatesIfNeeded()
         }
         hotkeyManager = HotkeyManager.shared
         hotkeyManager?.onPressed = { [weak self] in self?.handleHotkey() }
@@ -377,6 +379,7 @@ private struct MenuBarSearchView: View {
                         .foregroundStyle(Glass.secondaryText)
                 }
                 Spacer()
+                UpdateActionView(manager: ReleaseUpdateManager.shared)
                 Menu {
                     Button("Rebuild Index") { actions.rebuildIndex() }
                     Divider()
@@ -427,6 +430,9 @@ private struct MenuBarSearchView: View {
         .background(GlassBackdrop())
         .environment(\.colorScheme, .dark)
         .onExitCommand(perform: close)
-        .onAppear { launchAtLogin = actions.isLaunchAtLoginEnabled }
+        .onAppear {
+            launchAtLogin = actions.isLaunchAtLoginEnabled
+            ReleaseUpdateManager.shared.checkForUpdatesIfNeeded()
+        }
     }
 }
