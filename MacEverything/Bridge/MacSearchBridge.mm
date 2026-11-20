@@ -221,6 +221,16 @@
     });
 }
 
+- (BOOL)rebuildIndexWithCompletion:(void (^)(uint32_t totalRecords, BOOL didFullScan))completion {
+    [self _installCallbacks];
+
+    return _serviceEngine->rebuildIndex([completion](uint32_t count, bool didFullScan) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (completion) completion(count, didFullScan ? YES : NO);
+        });
+    }) ? YES : NO;
+}
+
 - (void)compactIndex {
     _serviceEngine->compactIndex();
 }

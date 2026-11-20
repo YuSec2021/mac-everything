@@ -90,6 +90,9 @@ uint32_t ServiceEngine::liveRecordCount() {
 IndexMetadata ServiceEngine::buildMetadata() {
     IndexMetadata meta;
     meta.lastEventId = watcher_ ? watcher_->getLastEventId() : 0;
+    if (meta.lastEventId == 0) {
+        meta.lastEventId = FileSystemWatcher::getCurrentSystemEventId();
+    }
     meta.extra[IndexMetadata::kScanRoot] = config_.scanRoot;
     meta.extra[IndexMetadata::kAppVersion] = kAppVersion;
     meta.extra[IndexMetadata::kRecordFormat] = "v6_flat";
@@ -256,7 +259,7 @@ void ServiceEngine::startIncremental(StartupCallback completion) {
             newPersistence->startAutoCompaction(300.0, this->watcher_);
 
             auto meta = this->buildMetadata();
-            newPersistence->flush(meta, /*force=*/true);
+            newPersistence->fullCompact(meta);
 
             // Auto-start HTTP server once engine is available
             if (config_.httpPort > 0) {
@@ -317,9 +320,9 @@ void ServiceEngine::backgroundSyncEngine(
                      << "FSEvents replay " << replayTime << "s, "
                      << "total " << totalTime << "s");
 
-            this->isSyncing_.store(false, std::memory_order_relaxed);
             this->startMonitoring();
             sharedPersistence->startAutoCompaction(300.0, this->watcher_);
+            this->isSyncing_.store(false, std::memory_order_relaxed);
 
             dispatch_group_async(this->backgroundGroup_, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
                 if (this->shuttingDown_.load(std::memory_order_acquire)) return;
@@ -369,8 +372,6 @@ void ServiceEngine::backgroundSyncEngine(
                  << "rescan " << scanTime << "s, "
                  << "total " << totalTime << "s");
 
-        this->isSyncing_.store(false, std::memory_order_relaxed);
-
         sharedPersistence->stopAutoCompactionAndWait();
 
         std::string cacheStr = config_.cachePath + "/index.bin";
@@ -389,7 +390,8 @@ void ServiceEngine::backgroundSyncEngine(
         newPersistence->startAutoCompaction(300.0, this->watcher_);
 
         auto meta = this->buildMetadata();
-        newPersistence->flush(meta, /*force=*/true);
+        newPersistence->fullCompact(meta);
+        this->isSyncing_.store(false, std::memory_order_relaxed);
 
         dispatch_group_async(this->backgroundGroup_, dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
             if (this->shuttingDown_.load(std::memory_order_acquire)) return;
@@ -398,6 +400,46 @@ void ServiceEngine::backgroundSyncEngine(
         });
         if (this->onIndexChanged) this->onIndexChanged();
     });
+}
+
+// ═══════════════════════════════════════════════════════
+//  Rebuild (discard every cache, then full scan)
+// ═══════════════════════════════════════════════════════
+
+bool ServiceEngine::rebuildIndex(StartupCallback completion) {
+    bool idle = false;
+    if (shuttingDown_.load(std::memory_order_acquire) || isSyncing_.load(std::memory_order_relaxed) ||
+        !isScanning_.compare_exchange_strong(idle, true, std::memory_order_acq_rel)) {
+        LOG_WARN("ServiceEngine", "rebuildIndex refused: a scan or startup sync is running");
+        return false;
+    }
+
+    LOG_INFO("ServiceEngine", "rebuildIndex started");
+    stopMonitoring();
+
+    dispatch_group_async(backgroundGroup_, dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        // Queued rescans still write to the old engine and can compact it.
+        dispatch_sync(this->mutationQueue_, ^{});
+        if (this->shuttingDown_.load(std::memory_order_acquire)) return;
+
+        // The old persistence goes before its files do: its timer could otherwise
+        // write the records being discarded back to index.v6 during the scan.
+        if (auto old = this->safePersistence()) old->stopAutoCompactionAndWait();
+        this->setPersistence(nullptr);
+
+        // Content entries refer to record numbers, which the scan assigns afresh.
+        this->discardContentIndex();
+
+        for (const char* name : {"index.v6", "index.v6.tmp", "index.wal", "index.wal.new", "index.bin",
+                                 "index.pages", "index.ptable", "content_index.bin", "content_index.wal"}) {
+            std::error_code ec;
+            fs::remove(config_.cachePath + "/" + name, ec);
+            if (ec) LOG_ERROR("ServiceEngine", "rebuildIndex could not remove " << name << ": " << ec.message());
+        }
+
+        this->startIncremental(completion);
+    });
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════
