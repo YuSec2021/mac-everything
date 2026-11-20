@@ -36,6 +36,13 @@ test-bridge-snapshot:
 		MacEverything/Bridge/MacSearchBridge+Content.mm $(CORE_SRCS) -o /tmp/maceverything-query-snapshot-test
 	/tmp/maceverything-query-snapshot-test
 
+.PHONY: test-release-update
+test-release-update:
+	DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcrun swiftc -parse-as-library \
+		MacEverything/App/ReleaseUpdateManager.swift tests/test_release_update.swift \
+		-o /tmp/maceverything-release-update-test
+	/tmp/maceverything-release-update-test
+
 # === Sanitizer targets ===
 test-asan: test_all.cpp $(CORE_SRCS)
 	$(CXX) -std=c++20 -O1 -g -fsanitize=address -fno-omit-frame-pointer $(RE2_CFLAGS) $(FRAMEWORKS) $(RE2_LDFLAGS) -IMacEverything/Core $^ -o test_all_asan

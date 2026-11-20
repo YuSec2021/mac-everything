@@ -6,6 +6,7 @@
 
 ## 最新更新
 
+- [157：搜索面板右上角新版本提示与 Release 安装包下载](157-release-update-download.md)：版本更新为 1.5.0（Build 6），异步检查 GitHub 正式 Release 并缓存，在搜索面板右上角显示液态玻璃更新按钮，自动匹配 arm64/x86_64 DMG 并直接下载到下载目录，支持进度、重试以及打开/Finder 定位。
 - [156：修复 APFS Data 卷重复索引与状态栏计数文案](156-dedup-apfs-data-volume-and-items-count.md)：扫描与 FSEvents 跳过 `/System/Volumes/Data` 消除 firmlink 重复路径，旧缓存启动自动后台重扫去重；状态栏由 `files indexed` 改为更准确的 `items indexed`。
 - [155：Rebuild Index 丢弃全部索引缓存并完整扫描](155-rebuild-index-discards-v6.md)：重建由引擎执行，先停旧持久化再删除 `index.v6` 等缓存并在扫描后立即落盘新缓存；`POST /api/index/rebuild` 在 App 中生效；版本号更新为 1.4.1（Build 5）。
 - [154：修复 MCP 客户端注册并新增 Codex](154-mcp-client-registration.md)：Claude Code 改写入 `~/.claude.json`，配置解析失败时不再覆盖原文件并提示，新增 Codex；MCP Server 解码 JSON 转义，HTTP 错误标记为工具错误。
@@ -187,19 +188,20 @@
 | [154](154-mcp-client-registration.md) | bugfix | 修复 MCP 客户端注册并新增 Codex | 2026-11-09 |
 | [155](155-rebuild-index-discards-v6.md) | bugfix | Rebuild Index 丢弃全部索引缓存并完整扫描 | 2026-11-09 |
 | [156](156-dedup-apfs-data-volume-and-items-count.md) | bugfix | 修复 APFS Data 卷重复索引与状态栏计数文案 | 2026-11-20 |
+| [157](157-release-update-download.md) | feature | 搜索面板右上角新版本提示与 Release 安装包下载 | 2026-11-20 |
 
 ## 统计
 
 | 类型 | 数量 |
 |------|------|
 | bugfix | 58 |
-| feature | 34 |
+| feature | 35 |
 | performance | 39 |
 | refactor | 17 |
 | test | 7 |
 | docs | 6 |
 | chore | 2 |
-| **合计** | **163 条 (156 个编号, 7 组重复编号各 2 条)** |
+| **合计** | **164 条 (157 个编号, 7 组重复编号各 2 条)** |
 
 ---
 
@@ -217,4 +219,4 @@
 | 2026-11-06 | 2 |
 | 2026-11-07 | 1 |
 | 2026-11-09 | 3 |
-| 2026-11-20 | 1 |
+| 2026-11-20 | 2 |
