@@ -31,6 +31,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopoverDel
         hotkeyManager?.onPressed = { [weak self] in self?.handleHotkey() }
         hotkeyManager?.register()
         setupStatusBar()
+        NotificationCenter.default.addObserver(self, selector: #selector(rebuildIndexFromHTTP),
+                                               name: Notification.Name("rebuildIndex"), object: nil)
     }
 
     /// Opening the app again from Finder, Spotlight or Launchpad shows the search panel.
@@ -285,6 +287,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSPopoverDel
     /// Opens the search panel too, so the scan progress is visible.
     @objc func rebuildIndex() {
         showSearch()
+        MainActor.assumeIsolated { SearchViewModel.shared.rebuildIndex() }
+    }
+
+    /// POST /api/index/rebuild, which runs without opening the search panel.
+    @objc private func rebuildIndexFromHTTP() {
         MainActor.assumeIsolated { SearchViewModel.shared.rebuildIndex() }
     }
 

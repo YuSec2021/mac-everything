@@ -199,9 +199,18 @@ void ServiceEngine::setContentConfig(const std::vector<std::string>& extensions,
 // ═══════════════════════════════════════════════════════
 
 void ServiceEngine::rebuildContentIndex() {
-    auto engine = safeEngine();
+    if (!safeEngine() || !safeContentIndex()) return;
+
+    discardContentIndex();
+
+    // Re-setup persistence and re-index
+    setupContentPersistence();
+    startContentIndexing();
+}
+
+void ServiceEngine::discardContentIndex() {
     auto contentIndex = safeContentIndex();
-    if (!engine || !contentIndex) return;
+    if (!contentIndex) return;
 
     // Cancel in-flight content indexing and wait
     contentIndexGeneration_.fetch_add(1, std::memory_order_acq_rel);
@@ -232,10 +241,6 @@ void ServiceEngine::rebuildContentIndex() {
         std::unique_lock lock(contentMutex_);
         contentIndex_ = newIndex;
     }
-
-    // Re-setup persistence and re-index
-    setupContentPersistence();
-    startContentIndexing();
 }
 
 // ═══════════════════════════════════════════════════════

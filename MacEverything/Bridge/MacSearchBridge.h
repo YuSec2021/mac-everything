@@ -69,6 +69,10 @@ NS_ASSUME_NONNULL_BEGIN
                      walPath:(NSString *)walPath
                   completion:(void (^)(uint32_t totalRecords, BOOL didFullScan))completion;
 
+/// Discard every cached index and rebuild from a full scan.
+/// Returns NO, and changes nothing, while a scan or startup sync is running.
+- (BOOL)rebuildIndexWithCompletion:(void (^)(uint32_t totalRecords, BOOL didFullScan))completion;
+
 /// Compact the index: write new base snapshot, clear WAL.
 - (void)compactIndex;
 

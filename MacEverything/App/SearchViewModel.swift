@@ -106,14 +106,6 @@ final class SearchViewModel {
         return (cacheDir as NSString).appendingPathComponent("index.wal")
     }
 
-    static var pagesPath: String {
-        return (cacheDir as NSString).appendingPathComponent("index.pages")
-    }
-
-    static var ptablePath: String {
-        return (cacheDir as NSString).appendingPathComponent("index.ptable")
-    }
-
     init() {
         observeSearchOptions()
         startIncremental()
@@ -181,24 +173,32 @@ final class SearchViewModel {
 
         bridge.startIncremental(from: "/",
                                 cachePath: Self.cachePath,
-                                walPath: Self.walPath) { [weak self] count, didFullScan in
-            Task { @MainActor in
-                guard let self = self else { return }
-                self.totalRecords = count
-                self.isScanning = false
-                self.scanComplete = true
-                self.isMonitoring = self.bridge.isMonitoring
-                self.isSyncing = self.bridge.isSyncing
+                                walPath: Self.walPath) { [weak self] count, _ in
+            Task { @MainActor in self?.indexDidStart(count: count) }
+        }
+    }
 
-                if !self.searchText.isEmpty {
-                    self.performSearch(self.searchText)
-                }
-            }
+    private func indexDidStart(count: UInt32) {
+        totalRecords = count
+        isScanning = false
+        scanComplete = true
+        isMonitoring = bridge.isMonitoring
+        isSyncing = bridge.isSyncing
+
+        if !searchText.isEmpty {
+            performSearch(searchText)
         }
     }
 
     func rebuildIndex() {
-        guard !isScanning else { return }
+        // The engine refuses, and logs why, while a scan or startup sync is running.
+        let started = bridge.rebuildIndex { [weak self] count, _ in
+            Task { @MainActor in self?.indexDidStart(count: count) }
+        }
+        guard started else { return }
+
+        isScanning = true
+        scannedCount = 0
         searchTask?.cancel()
         indexChangeTask?.cancel()
         searchGeneration &+= 1
@@ -210,14 +210,6 @@ final class SearchViewModel {
         setContentResults([])
         isContentSearch = false
         contentKeyword = ""
-
-        // Delete cached index files so startIncremental does a full scan
-        try? FileManager.default.removeItem(atPath: Self.cachePath)
-        try? FileManager.default.removeItem(atPath: Self.walPath)
-        try? FileManager.default.removeItem(atPath: Self.pagesPath)
-        try? FileManager.default.removeItem(atPath: Self.ptablePath)
-
-        startIncremental()
     }
 
     func onSearchTextChanged() {
