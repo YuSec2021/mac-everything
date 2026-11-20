@@ -288,6 +288,9 @@ public:
     /// Look up the record index for a given full path. Returns UINT32_MAX if not found.
     uint32_t indexForPath(const std::string& fullPath) const;
 
+    /// Returns true if any live record is at `pathPrefix` or beneath `pathPrefix/`.
+    bool hasPathPrefix(const std::string& pathPrefix) const;
+
     /// Export a copy of all live records with their paths restored. Thread-safe.
     std::vector<FileRecord> exportRecords() const;
 

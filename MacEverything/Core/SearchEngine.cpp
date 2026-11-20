@@ -873,6 +873,31 @@ uint32_t SearchEngine::indexForPath(const std::string& fullPath) const {
     return findPathRecord(me::toLower(fullPath));
 }
 
+bool SearchEngine::hasPathPrefix(const std::string& pathPrefix) const {
+    std::shared_lock lock(mutex_);
+    if (pathPrefix.empty()) return false;
+    std::string lowerPrefix = me::toLower(pathPrefix);
+    while (lowerPrefix.size() > 1 && lowerPrefix.back() == '/') {
+        lowerPrefix.pop_back();
+    }
+    if (findPathRecord(lowerPrefix) != kNoRecord) return true;
+
+    const std::string below = lowerPrefix == "/" ? lowerPrefix : lowerPrefix + '/';
+    const auto lower = pathPool_.lower();
+    std::string dir;
+    for (uint32_t d = 0; d < lower.entryCount(); ++d) {
+        if (lower.length(d) < lowerPrefix.size()) continue;
+        lower.reconstruct(d, dir);
+        if (dir == lowerPrefix || dir.compare(0, below.size(), below) == 0) {
+            if (pathIdxToRecords_.empty()) return true;
+            bool hasLive = false;
+            pathIdxToRecords_.forEach(d, types_, [&](uint32_t) { hasLive = true; });
+            if (hasLive) return true;
+        }
+    }
+    return false;
+}
+
 std::vector<FileRecord> SearchEngine::exportRecords() const {
     std::shared_lock lock(mutex_);
     std::vector<FileRecord> result;

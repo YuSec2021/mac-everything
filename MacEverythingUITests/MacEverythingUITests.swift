@@ -106,6 +106,6 @@ final class MacEverythingUITests: XCTestCase {
         XCTAssertTrue(indexedCount.waitForExistence(timeout: 30), "Indexed count should appear after scan")
 
         let text = indexedCount.label
-        XCTAssertTrue(text.contains("files indexed"), "Should show files indexed count")
+        XCTAssertTrue(text.contains("items indexed"), "Should show items indexed count")
     }
 }

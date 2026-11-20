@@ -1,4 +1,5 @@
 #include "DirectoryScanner.h"
+#include "PathUtils.h"
 #include "Logger.h"
 #include <sys/attr.h>
 #include <sys/vnode.h>
@@ -33,6 +34,7 @@ void DirectoryScanner::scan(const std::string& rootPath) {
     stats_.errorCount.store(0, std::memory_order_relaxed);
 
     // Determine root device ID to skip cross-mount directories (autofs, devfs, etc.)
+    rootPath_ = rootPath;
     struct stat rootStat;
     if (stat(rootPath.c_str(), &rootStat) == 0) {
         rootDevId_ = rootStat.st_dev;
@@ -265,11 +267,21 @@ void DirectoryScanner::scanDirectory(const std::string& dirPath, char* buffer, i
                     continue;
                 }
 
-                if (tryVisitDirectory(devid, fileid)) {
-                    std::string childPath = dirPath;
-                    if (childPath.back() != '/') childPath += '/';
-                    childPath += name;
+                std::string childPath = dirPath;
+                if (childPath.back() != '/') childPath += '/';
+                childPath += name;
 
+                // Skip macOS APFS Data volume mountpoint (/System/Volumes/Data).
+                // It shares st_dev with '/' while firmlink stubs in '/' have different
+                // fileids from the Data volume targets, so neither devid nor inode dedup
+                // stops the scanner from traversing the Data volume a second time.
+                if (PathUtils::isAPFSDataVolumePath(childPath) &&
+                    !PathUtils::isAPFSDataVolumePath(rootPath_)) {
+                    entry = nextEntry;
+                    continue;
+                }
+
+                if (tryVisitDirectory(devid, fileid)) {
                     // Detect .app bundles — record as type 5, skip recursion
                     size_t nameLen = strlen(name);
                     bool isAppBundle = (nameLen > 4 &&

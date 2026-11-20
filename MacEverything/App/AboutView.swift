@@ -44,7 +44,7 @@ struct AboutView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("版本说明 / Version notes")
                     .font(.headline)
-                Text("1.4.1：修复重叠索引压缩误删存活记录的问题；Rebuild Index 改为丢弃全部缓存（含 index.v6 与内容索引）并完整重扫，扫描完成后立即落盘新的 index.v6。\n\n内容搜索的扩展名和文件大小上限设置重启后保留；MCP 集成修复 Claude Code 配置写错文件（需重新启用一次）、新增 Codex、配置文件解析失败时不再覆盖并正确解码查询与报告 HTTP 错误。\n\n1.4.0：应用常驻菜单栏，搜索面板改为液态玻璃风格，支持分页结果、快捷键冲突检查、Quick Look 和 Finder 定位。")
+                Text("1.4.1：修复重叠索引压缩误删存活记录的问题；Rebuild Index 改为丢弃全部缓存（含 index.v6 与内容索引）并完整重扫，扫描完成后立即落盘新的 index.v6；扫描与监听跳过 /System/Volumes/Data 避免 APFS 重复索引，旧缓存自动后台重扫去重，状态栏计数文案改为 items indexed。\n\n内容搜索的扩展名和文件大小上限设置重启后保留；MCP 集成修复 Claude Code 配置写错文件（需重新启用一次）、新增 Codex、配置文件解析失败时不再覆盖并正确解码查询与报告 HTTP 错误。\n\n1.4.0：应用常驻菜单栏，搜索面板改为液态玻璃风格，支持分页结果、快捷键冲突检查、Quick Look 和 Finder 定位。")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

@@ -3,6 +3,7 @@
 // Verifies ServiceEngine construction, full scan on a tmpdir, query, and shutdown.
 
 // ServiceEngine.h is included via test_all.cpp
+#include "../MacEverything/Core/PathUtils.h"
 #include <fstream>
 
 static bool runPart40() {
@@ -306,6 +307,62 @@ static bool runPart40() {
               !restarted->safeEngine()->query("hello", 10).empty(),
               "Rebuild: damaged records stay gone after a restart");
         restarted->shutdown();
+    }
+
+    // Test 12: APFS Data volume (/System/Volumes/Data) deduplication
+    {
+        check(PathUtils::isAPFSDataVolumePath("/System/Volumes/Data"),
+              "APFS: exact /System/Volumes/Data matches");
+        check(PathUtils::isAPFSDataVolumePath("/System/Volumes/Data/"),
+              "APFS: trailing slash /System/Volumes/Data/ matches");
+        check(PathUtils::isAPFSDataVolumePath("/System/Volumes/Data/Users/alice"),
+              "APFS: nested /System/Volumes/Data/Users/alice matches");
+        check(!PathUtils::isAPFSDataVolumePath("/System/Volumes/Data2"),
+              "APFS: sibling /System/Volumes/Data2 does not match");
+        check(!PathUtils::isAPFSDataVolumePath("/System/Volumes"),
+              "APFS: parent /System/Volumes does not match");
+        check(!PathUtils::isAPFSDataVolumePath("/Users/alice"),
+              "APFS: /Users/alice does not match");
+
+        // DirectoryScanner must skip /System/Volumes/Data when scanning above it
+        if (fs::exists("/System/Volumes")) {
+            DirectoryScanner scanner;
+            scanner.scan("/System/Volumes");
+            auto results = scanner.takeResults();
+            bool hasDataVol = false;
+            for (const auto& r : results) {
+                std::string full = SearchEngine::makeFullPath(r.path, r.name);
+                if (PathUtils::isAPFSDataVolumePath(full)) {
+                    hasDataVol = true;
+                    break;
+                }
+            }
+            check(!hasDataVol, "APFS: DirectoryScanner skips /System/Volumes/Data");
+        }
+
+        // FSEvents translation ignores /System/Volumes/Data paths
+        SearchEngine engine;
+        ServiceEngine::FSEventMutations out;
+        ServiceEngine::collectFSEventMutations(
+            {{"/System/Volumes/Data", kFSEventStreamEventFlagMustScanSubDirs},
+             {"/System/Volumes/Data/Users", kFSEventStreamEventFlagItemCreated | kFSEventStreamEventFlagItemIsDir}},
+            engine, true, out);
+        check(out.ops.empty() && out.rescanDirs.empty() && out.contentUpdates.empty(),
+              "APFS: collectFSEventMutations ignores /System/Volumes/Data paths");
+
+        // SearchEngine::hasPathPrefix detects legacy cached /System/Volumes/Data records
+        std::vector<FileRecord> dirtyRecords = {
+            {"alice", "/Users", 2, 0, 100, 1, 1},
+            {"report.txt", "/System/Volumes/Data/Users/alice", 1, 42, 100, 2, 1},
+        };
+        engine.loadRecords(std::move(dirtyRecords));
+        check(engine.hasPathPrefix("/System/Volumes/Data"),
+              "APFS: hasPathPrefix detects /System/Volumes/Data records");
+        engine.removeByPathPrefix("/System/Volumes/Data");
+        check(!engine.hasPathPrefix("/System/Volumes/Data"),
+              "APFS: hasPathPrefix returns false after removing /System/Volumes/Data records");
+        check(engine.hasPathPrefix("/Users"),
+              "APFS: hasPathPrefix still detects /Users records");
     }
 
     // Clean up

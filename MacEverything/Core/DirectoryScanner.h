@@ -54,6 +54,7 @@ private:
     std::unordered_set<InodeKey, InodeKeyHash> visitedDirs_;
     std::mutex dedupMutex_;
     dev_t rootDevId_{0};  // device ID of root path — skip cross-mount directories
+    std::string rootPath_;
 
     std::vector<std::vector<FileRecord>> threadResults_;
     Stats stats_;
